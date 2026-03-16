@@ -1402,7 +1402,7 @@ Logging in with Google... Restarting Gemini CLI to continue.
   const [controlsHeight, setControlsHeight] = useState(0);
   const [lastNonCopyControlsHeight, setLastNonCopyControlsHeight] = useState(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!copyModeEnabled && controlsHeight > 0) {
       setLastNonCopyControlsHeight(controlsHeight);
     }
