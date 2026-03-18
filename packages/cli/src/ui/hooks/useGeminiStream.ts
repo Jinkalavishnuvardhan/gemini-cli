@@ -59,7 +59,6 @@ import type {
   HistoryItemThinking,
   HistoryItemWithoutId,
   HistoryItemToolGroup,
-  HistoryItemInfo,
   IndividualToolCallDisplay,
   SlashCommandProcessorResult,
   HistoryItemModel,
@@ -1108,22 +1107,18 @@ export const useGeminiStream = (
         setPendingHistoryItem(null);
       }
 
-      const limit = tokenLimit(config.getModel());
-      const originalPercentage = Math.round(
-        ((eventValue?.originalTokenCount ?? 0) / limit) * 100,
-      );
-      const newPercentage = Math.round(
-        ((eventValue?.newTokenCount ?? 0) / limit) * 100,
-      );
-
       addItem(
         {
-          type: MessageType.INFO,
-          text: `Context compressed from ${originalPercentage}% to ${newPercentage}%.`,
-          secondaryText: `Change threshold in /settings.`,
-          color: theme.status.warning,
-          marginBottom: 1,
-        } as HistoryItemInfo,
+          type: 'compression',
+          compression: {
+            isPending: false,
+            originalTokenCount: eventValue?.originalTokenCount ?? null,
+            newTokenCount: eventValue?.newTokenCount ?? null,
+            compressionStatus: eventValue?.compressionStatus ?? null,
+            model: config.getModel(),
+          },
+          timestamp: new Date(userMessageTimestamp),
+        } as HistoryItemWithoutId,
         userMessageTimestamp,
       );
     },
@@ -1145,17 +1140,16 @@ export const useGeminiStream = (
     (estimatedRequestTokenCount: number, remainingTokenCount: number) => {
       onCancelSubmit(true);
 
-      const limit = tokenLimit(config.getModel());
-
-      const isMoreThan25PercentUsed =
-        limit > 0 && remainingTokenCount < limit * 0.75;
-
-      let text = `Sending this message (${estimatedRequestTokenCount} tokens) might exceed the context window limit (${remainingTokenCount.toLocaleString()} tokens left).`;
-
-      if (isMoreThan25PercentUsed) {
-        text +=
-          ' Please try reducing the size of your message or use the `/compress` command to compress the chat history.';
+      if (!config.getShowContextWindowWarning()) {
+        return;
       }
+
+      const limit = tokenLimit(config.getModel());
+      const usedPercentage = Math.round(
+        ((limit - remainingTokenCount) / limit) * 100,
+      );
+
+      const text = `Context window is ${usedPercentage}% full. Message size (${estimatedRequestTokenCount.toLocaleString()} tokens) might exceed the limit.\nPlease try reducing the size of your message or use the /compress command to compress the chat history.`;
 
       addItem({
         type: 'info',
