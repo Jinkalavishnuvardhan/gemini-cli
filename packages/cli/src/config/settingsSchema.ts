@@ -2045,6 +2045,16 @@ const SETTINGS_SCHEMA = {
           },
         },
       },
+      memory: {
+        type: 'boolean',
+        label: 'Memory Consolidation',
+        category: 'Experimental',
+        requiresRestart: false,
+        default: false,
+        description:
+          'Automatically detect and save useful soft information (preferences, corrections, project context) to long-term memory at the end of each conversation turn.',
+        showInDialog: true,
+      },
       topicUpdateNarration: {
         type: 'boolean',
         label: 'Topic & Update Narration',
