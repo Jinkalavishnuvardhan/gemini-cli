@@ -231,6 +231,7 @@ const createMockConfig = (overrides = {}): Config =>
     getAccessibility: vi.fn(() => ({})),
     getMcpServers: vi.fn(() => ({})),
     isPlanEnabled: vi.fn(() => true),
+    getAllowedTools: vi.fn(() => []),
     getToolRegistry: () => ({
       getTool: vi.fn(),
     }),
@@ -620,7 +621,6 @@ describe('Composer', () => {
       [ApprovalMode.DEFAULT],
       [ApprovalMode.AUTO_EDIT],
       [ApprovalMode.PLAN],
-      [ApprovalMode.YOLO],
     ])(
       'shows ApprovalModeIndicator when approval mode is %s and shell mode is inactive',
       async (mode) => {
@@ -634,6 +634,20 @@ describe('Composer', () => {
         expect(lastFrame()).toMatch(/ApprovalModeIndic[\s\S]*ator/);
       },
     );
+
+    it('shows ApprovalModeIndicator when YOLO mode is active and shell mode is inactive', async () => {
+      const config = createMockConfig({
+        getAllowedTools: vi.fn(() => ['*']),
+      });
+      const uiState = createMockUIState({
+        showApprovalModeIndicator: ApprovalMode.DEFAULT,
+        shellModeActive: false,
+      });
+
+      const { lastFrame } = await renderComposer(uiState, undefined, config);
+
+      expect(lastFrame()).toMatch(/ApprovalModeIndic[\s\S]*ator/);
+    });
 
     it('shows ShellModeIndicator when shell mode is active', async () => {
       const uiState = createMockUIState({
@@ -666,7 +680,6 @@ describe('Composer', () => {
     });
 
     it.each([
-      [ApprovalMode.YOLO, 'YOLO'],
       [ApprovalMode.PLAN, 'plan'],
       [ApprovalMode.AUTO_EDIT, 'auto edit'],
     ])(
@@ -681,6 +694,19 @@ describe('Composer', () => {
         expect(lastFrame()).toContain(label);
       },
     );
+
+    it('shows minimal mode badge "YOLO" when clean UI details are hidden and YOLO mode is active', async () => {
+      const config = createMockConfig({
+        getAllowedTools: vi.fn(() => ['*']),
+      });
+      const uiState = createMockUIState({
+        cleanUiDetailsVisible: false,
+        showApprovalModeIndicator: ApprovalMode.DEFAULT,
+      });
+
+      const { lastFrame } = await renderComposer(uiState, undefined, config);
+      expect(lastFrame()).toContain('YOLO');
+    });
 
     it('hides minimal mode badge while loading in clean mode', async () => {
       const uiState = createMockUIState({
@@ -937,7 +963,7 @@ describe('Composer', () => {
 
       const uiState = createMockUIState({
         cleanUiDetailsVisible: true,
-        showApprovalModeIndicator: ApprovalMode.YOLO,
+        showApprovalModeIndicator: ApprovalMode.AUTO_EDIT,
       });
 
       const { lastFrame } = await renderComposer(uiState);
