@@ -469,8 +469,7 @@ describe('ToolConfirmationMessage', () => {
         confirm: vi.fn(),
         cancel: vi.fn(),
         isDiffingEnabled: false,
-      });
-
+  });
       const { lastFrame, waitUntilReady, unmount } = await renderWithProviders(
         <ToolConfirmationMessage
           callId="test-call-id"
@@ -497,8 +496,7 @@ describe('ToolConfirmationMessage', () => {
         confirm: vi.fn(),
         cancel: vi.fn(),
         isDiffingEnabled: false,
-      });
-
+  });
       const { lastFrame, waitUntilReady, unmount } = await renderWithProviders(
         <ToolConfirmationMessage
           callId="test-call-id"
@@ -668,8 +666,7 @@ describe('ToolConfirmationMessage', () => {
         confirm: mockConfirm,
         cancel: vi.fn(),
         isDiffingEnabled: false,
-      });
-
+  });
       const confirmationDetails: SerializableConfirmationDetails = {
         type: 'info',
         title: 'Confirm Web Fetch',

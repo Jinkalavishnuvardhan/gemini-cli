@@ -72,16 +72,21 @@ describe('ToolActionsContext', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default to a pending promise to avoid unwanted async state updates in tests
+    // that don't specifically test the IdeClient initialization.
+    vi.mocked(IdeClient.getInstance).mockReturnValue(new Promise(() => {}));
   });
 
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <ToolActionsProvider config={mockConfig} toolCalls={mockToolCalls}>
-      {children}
-    </ToolActionsProvider>
-  );
+  const Wrapper = ({ children }: { children: React.ReactNode }) => {
+    return (
+      <ToolActionsProvider config={mockConfig} toolCalls={mockToolCalls}>
+        {children}
+      </ToolActionsProvider>
+    );
+  };
 
   it('publishes to MessageBus for tools with correlationId', async () => {
-    const { result } = renderHook(() => useToolActions(), { wrapper });
+    const { result } = renderHook(() => useToolActions(), { wrapper: Wrapper });
 
     await result.current.confirm(
       'modern-call',
@@ -99,7 +104,7 @@ describe('ToolActionsContext', () => {
   });
 
   it('handles cancel by calling confirm with Cancel outcome', async () => {
-    const { result } = renderHook(() => useToolActions(), { wrapper });
+    const { result } = renderHook(() => useToolActions(), { wrapper: Wrapper });
 
     await result.current.cancel('modern-call');
 
@@ -119,7 +124,7 @@ describe('ToolActionsContext', () => {
     vi.mocked(IdeClient.getInstance).mockResolvedValue(mockIdeClient);
     vi.mocked(mockConfig.getIdeMode).mockReturnValue(true);
 
-    const { result } = renderHook(() => useToolActions(), { wrapper });
+    const { result } = renderHook(() => useToolActions(), { wrapper: Wrapper });
 
     // Wait for IdeClient initialization in useEffect
     await act(async () => {
@@ -157,7 +162,7 @@ describe('ToolActionsContext', () => {
     vi.mocked(IdeClient.getInstance).mockResolvedValue(mockIdeClient);
     vi.mocked(mockConfig.getIdeMode).mockReturnValue(true);
 
-    const { result } = renderHook(() => useToolActions(), { wrapper });
+    const { result } = renderHook(() => useToolActions(), { wrapper: Wrapper });
 
     // Wait for initialization
     await act(async () => {

@@ -816,6 +816,21 @@ export interface TodoList {
 
 export type ToolLiveOutput = string | AnsiOutput | SubagentProgress;
 
+export interface StructuredToolResult {
+  summary: string;
+}
+
+export function isStructuredToolResult(
+  obj: unknown,
+): obj is StructuredToolResult {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'summary' in obj &&
+    typeof obj.summary === 'string'
+  );
+}
+
 export type ToolResultDisplay =
   | string
   | FileDiff
@@ -869,6 +884,7 @@ export interface ToolEditConfirmationDetails {
   originalContent: string | null;
   newContent: string;
   isModifying?: boolean;
+  diffStat?: DiffStat;
   ideConfirmation?: Promise<DiffUpdateResult>;
 }
 
