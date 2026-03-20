@@ -324,6 +324,7 @@ describe('useGeminiStream', () => {
     getIdeMode: vi.fn(() => false),
     getEnableHooks: vi.fn(() => false),
     getShowContextWindowWarning: vi.fn(() => false),
+    getContextWindowCompressionThreshold: vi.fn(() => 0.2),
   } as unknown as Config;
 
   beforeEach(() => {
@@ -2357,7 +2358,7 @@ describe('useGeminiStream', () => {
           remainingTokens: 70,
           shouldShow: true,
           expectedMessage:
-            'Context window is 30% full. Message size (30 tokens) might exceed the limit.\nPlease try reducing the size of your message or use the /compress command to compress the chat history.',
+            'Context 30% full. Message may exceed limit. Reduce size or /compress.',
         },
       ])(
         'should $name',
@@ -2456,6 +2457,9 @@ describe('useGeminiStream', () => {
 
     it('should add informational messages when ChatCompressed event is received', async () => {
       vi.mocked(tokenLimit).mockReturnValue(10000);
+      vi.mocked(
+        mockConfig.getContextWindowCompressionThreshold,
+      ).mockReturnValue(0.2);
       // Setup mock to return a stream with ChatCompressed event
       mockSendMessageStream.mockReturnValue(
         (async function* () {
@@ -2465,6 +2469,21 @@ describe('useGeminiStream', () => {
               originalTokenCount: 1000,
               newTokenCount: 500,
               compressionStatus: 'compressed',
+            },
+          };
+          yield {
+            type: ServerGeminiEventType.Content,
+            value: 'Response after compression',
+          };
+          yield {
+            type: ServerGeminiEventType.Finished,
+            value: {
+              finishReason: 'STOP',
+              usageMetadata: {
+                promptTokenCount: 10,
+                candidatesTokenCount: 20,
+                totalTokenCount: 30,
+              },
             },
           };
         })(),
@@ -2481,13 +2500,13 @@ describe('useGeminiStream', () => {
       await waitFor(() => {
         expect(mockAddItem).toHaveBeenCalledWith(
           expect.objectContaining({
-            type: MessageType.COMPRESSION,
+            type: 'compression',
             compression: {
               isPending: false,
-              originalTokenCount: 1000,
-              newTokenCount: 500,
+              beforePercentage: 10,
+              afterPercentage: 5,
+              threshold: 20,
               compressionStatus: 'compressed',
-              model: 'gemini-2.5-pro',
             },
           }),
           expect.any(Number),

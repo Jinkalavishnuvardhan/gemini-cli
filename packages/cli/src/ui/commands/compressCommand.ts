@@ -6,6 +6,7 @@
 
 import { MessageType, type HistoryItemCompression } from '../types.js';
 import { CommandKind, type SlashCommand } from './types.js';
+import { tokenLimit } from '@google/gemini-cli-core';
 
 export const compressCommand: SlashCommand = {
   name: 'compress',
@@ -14,7 +15,8 @@ export const compressCommand: SlashCommand = {
   kind: CommandKind.BUILT_IN,
   autoExecute: true,
   action: async (context) => {
-    const { ui } = context;
+    const { ui, services } = context;
+    const config = services.config;
     if (ui.pendingItem) {
       ui.addItem(
         {
@@ -30,29 +32,40 @@ export const compressCommand: SlashCommand = {
       type: MessageType.COMPRESSION,
       compression: {
         isPending: true,
-        originalTokenCount: null,
-        newTokenCount: null,
+        beforePercentage: null,
+        afterPercentage: null,
+        threshold: null,
         compressionStatus: null,
-        model: context.services.config?.getModel(),
       },
     };
 
     try {
       ui.setPendingItem(pendingMessage);
       const promptId = `compress-${Date.now()}`;
-      const compressed = await context.services.config
+      const compressed = await config
         ?.getGeminiClient()
         ?.tryCompressChat(promptId, true);
       if (compressed) {
+        const limit = tokenLimit(config.getModel());
+        const beforePercentage = Math.round(
+          (compressed.originalTokenCount / limit) * 100,
+        );
+        const afterPercentage = Math.round(
+          (compressed.newTokenCount / limit) * 100,
+        );
+        const threshold = Math.round(
+          config.getContextWindowCompressionThreshold() * 100,
+        );
+
         ui.addItem(
           {
             type: MessageType.COMPRESSION,
             compression: {
               isPending: false,
-              originalTokenCount: compressed.originalTokenCount,
-              newTokenCount: compressed.newTokenCount,
+              beforePercentage,
+              afterPercentage,
+              threshold,
               compressionStatus: compressed.compressionStatus,
-              model: context.services.config?.getModel(),
             },
           } as HistoryItemCompression,
           Date.now(),
