@@ -21,8 +21,8 @@ describe('<CompressionMessage />', () => {
       isPending: false,
       beforePercentage: null,
       afterPercentage: null,
-      threshold: null,
       compressionStatus: CompressionStatus.COMPRESSED,
+      isManual: true,
       ...overrides,
     },
   });
@@ -47,7 +47,6 @@ describe('<CompressionMessage />', () => {
         isPending: false,
         beforePercentage: 22,
         afterPercentage: 6,
-        threshold: 20,
         compressionStatus: CompressionStatus.COMPRESSED,
       });
       const { lastFrame, waitUntilReady, unmount } = renderWithProviders(
@@ -57,9 +56,7 @@ describe('<CompressionMessage />', () => {
       const output = lastFrame();
 
       expect(output).not.toContain('✦');
-      expect(output).toContain(
-        'Context compressed (22% ➔ 6%). Adjust threshold (20%) in /settings.',
-      );
+      expect(output).toContain('Context compressed (22% ➔ 6%).');
       unmount();
     });
   });

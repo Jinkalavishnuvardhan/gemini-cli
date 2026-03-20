@@ -324,6 +324,7 @@ describe('useGeminiStream', () => {
     getIdeMode: vi.fn(() => false),
     getEnableHooks: vi.fn(() => false),
     getShowContextWindowWarning: vi.fn(() => false),
+    getShowContextCompression: vi.fn(() => false),
     getContextWindowCompressionThreshold: vi.fn(() => 0.2),
   } as unknown as Config;
 
@@ -2455,11 +2456,12 @@ describe('useGeminiStream', () => {
       });
     });
 
-    it('should add informational messages when ChatCompressed event is received', async () => {
+    it('should add informational messages when ChatCompressed event is received and showContextCompression is true', async () => {
       vi.mocked(tokenLimit).mockReturnValue(10000);
       vi.mocked(
         mockConfig.getContextWindowCompressionThreshold,
       ).mockReturnValue(0.2);
+      vi.mocked(mockConfig.getShowContextCompression).mockReturnValue(true);
       // Setup mock to return a stream with ChatCompressed event
       mockSendMessageStream.mockReturnValue(
         (async function* () {
@@ -2505,11 +2507,63 @@ describe('useGeminiStream', () => {
               isPending: false,
               beforePercentage: 10,
               afterPercentage: 5,
-              threshold: 20,
               compressionStatus: 'compressed',
+              isManual: false,
             },
           }),
           expect.any(Number),
+        );
+      });
+    });
+
+    it('should NOT add informational messages when ChatCompressed event is received and showContextCompression is false', async () => {
+      vi.mocked(tokenLimit).mockReturnValue(10000);
+      vi.mocked(
+        mockConfig.getContextWindowCompressionThreshold,
+      ).mockReturnValue(0.2);
+      vi.mocked(mockConfig.getShowContextCompression).mockReturnValue(false);
+      // Setup mock to return a stream with ChatCompressed event
+      mockSendMessageStream.mockReturnValue(
+        (async function* () {
+          yield {
+            type: ServerGeminiEventType.ChatCompressed,
+            value: {
+              originalTokenCount: 1000,
+              newTokenCount: 500,
+              compressionStatus: 'compressed',
+            },
+          };
+          yield {
+            type: ServerGeminiEventType.Content,
+            value: 'Response after compression',
+          };
+          yield {
+            type: ServerGeminiEventType.Finished,
+            value: {
+              finishReason: 'STOP',
+              usageMetadata: {
+                promptTokenCount: 10,
+                candidatesTokenCount: 20,
+                totalTokenCount: 30,
+              },
+            },
+          };
+        })(),
+      );
+
+      const { result } = renderHookWithDefaults();
+
+      // Submit a query
+      await act(async () => {
+        await result.current.submitQuery('Test compression');
+      });
+
+      // Check that NO compression message was added
+      await waitFor(() => {
+        expect(mockAddItem).not.toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'compression',
+          }),
         );
       });
     });

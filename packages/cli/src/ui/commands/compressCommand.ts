@@ -34,8 +34,8 @@ export const compressCommand: SlashCommand = {
         isPending: true,
         beforePercentage: null,
         afterPercentage: null,
-        threshold: null,
         compressionStatus: null,
+        isManual: true,
       },
     };
 
@@ -53,9 +53,6 @@ export const compressCommand: SlashCommand = {
         const afterPercentage = Math.round(
           (compressed.newTokenCount / limit) * 100,
         );
-        const threshold = Math.round(
-          config.getContextWindowCompressionThreshold() * 100,
-        );
 
         ui.addItem(
           {
@@ -64,8 +61,8 @@ export const compressCommand: SlashCommand = {
               isPending: false,
               beforePercentage,
               afterPercentage,
-              threshold,
               compressionStatus: compressed.compressionStatus,
+              isManual: true,
             },
           } as HistoryItemCompression,
           Date.now(),
