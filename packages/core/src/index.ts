@@ -182,6 +182,7 @@ export * from './agents/local-executor.js';
 export * from './agents/agent-scheduler.js';
 
 // Export agent session interface
+export * from './agent/agent-session.js';
 export * from './agent/legacy-agent-session.js';
 export * from './agent/event-translator.js';
 export * from './agent/content-utils.js';
@@ -190,15 +191,17 @@ export type {
   AgentEvent,
   AgentEventCommon,
   AgentEventData,
+  AgentEnd,
   AgentEvents as AgentEventMap,
+  AgentEventType,
+  AgentProtocol,
   AgentSend,
-  AgentSession,
+  AgentStart,
   ContentPart,
   ErrorData,
-  StreamEnd,
   StreamEndReason,
-  StreamStart,
   Trajectory,
+  Unsubscribe,
   Usage as AgentUsage,
   WithMeta,
 } from './agent/types.js';

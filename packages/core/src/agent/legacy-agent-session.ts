@@ -5,36 +5,38 @@
  */
 
 /**
- * @fileoverview LegacyAgentSession — owns the agentic loop (send + tool
- * scheduling + multi-turn), translating all events to AgentEvents.
+ * @fileoverview LegacyAgentSession backed by the existing Gemini client +
+ * scheduler loop, adapted to the merged AgentProtocol / AgentSession surface.
  */
 
 import { GeminiEventType } from '../core/turn.js';
 import type { GeminiClient } from '../core/client.js';
-import type { Scheduler } from '../scheduler/scheduler.js';
 import type { Config } from '../config/config.js';
 import type { ToolCallRequestInfo } from '../scheduler/types.js';
-import { ToolErrorType, isFatalToolError } from '../tools/tool-error.js';
+import type { Scheduler } from '../scheduler/scheduler.js';
 import { recordToolCallInteractions } from '../code_assist/telemetry.js';
+import { ToolErrorType, isFatalToolError } from '../tools/tool-error.js';
 import { debugLogger } from '../utils/debugLogger.js';
 import {
-  translateEvent,
+  buildToolResponseData,
+  contentPartsToGeminiParts,
+  geminiPartsToContentParts,
+  toolResultDisplayToContentParts,
+} from './content-utils.js';
+import { AgentSession } from './agent-session.js';
+import {
   createTranslationState,
   mapFinishReason,
+  translateEvent,
   type TranslationState,
 } from './event-translator.js';
-import {
-  geminiPartsToContentParts,
-  contentPartsToGeminiParts,
-  toolResultDisplayToContentParts,
-  buildToolResponseData,
-} from './content-utils.js';
 import type {
   AgentEvent,
-  AgentSession,
+  AgentProtocol,
   AgentSend,
   ContentPart,
   StreamEndReason,
+  Unsubscribe,
 } from './types.js';
 
 export interface LegacySessionDeps {
@@ -45,18 +47,16 @@ export interface LegacySessionDeps {
   streamId?: string;
 }
 
-// ---------------------------------------------------------------------------
-// LegacyAgentSession
-// ---------------------------------------------------------------------------
+type Part = import('@google/genai').Part;
 
-export class LegacyAgentSession implements AgentSession {
+class LegacyAgentProtocol implements AgentProtocol {
   private _events: AgentEvent[] = [];
+  private _subscribers = new Set<(event: AgentEvent) => void>();
   private _translationState: TranslationState;
-  private _subscribers: Set<() => void> = new Set();
-  private _streamEndEmitted: boolean = false;
+  private _agentEndEmitted = false;
   private _activeStreamId?: string;
-  private _lastStartedStreamId?: string;
-  private _abortController: AbortController = new AbortController();
+  private _abortController = new AbortController();
+  private _nextStreamIdOverride?: string;
 
   private readonly _client: GeminiClient;
   private readonly _scheduler: Scheduler;
@@ -65,15 +65,23 @@ export class LegacyAgentSession implements AgentSession {
 
   constructor(deps: LegacySessionDeps) {
     this._translationState = createTranslationState(deps.streamId);
+    this._nextStreamIdOverride = deps.streamId;
     this._client = deps.client;
     this._scheduler = deps.scheduler;
     this._config = deps.config;
     this._promptId = deps.promptId;
   }
 
-  // ---------------------------------------------------------------------------
-  // AgentSession interface
-  // ---------------------------------------------------------------------------
+  get events(): AgentEvent[] {
+    return this._events;
+  }
+
+  subscribe(callback: (event: AgentEvent) => void): Unsubscribe {
+    this._subscribers.add(callback);
+    return () => {
+      this._subscribers.delete(callback);
+    };
+  }
 
   async send(payload: AgentSend): Promise<{ streamId: string }> {
     const message = 'message' in payload ? payload.message : undefined;
@@ -88,387 +96,238 @@ export class LegacyAgentSession implements AgentSession {
     }
 
     this._beginNewStream();
-    this._ensureStreamStart();
-    this._appendAndNotify([
-      this._makeInternalEvent('message', {
-        role: 'user',
-        content: message,
-        ...(payload._meta ? { _meta: payload._meta } : {}),
-      }),
-    ]);
-
+    const streamId = this._translationState.streamId;
     const parts = contentPartsToGeminiParts(message);
-
-    // Start the loop in the background — don't await
-    this._runLoop(parts).catch((err: unknown) => {
-      this._emitErrorAndStreamEnd(err);
+    const userMessage = this._makeInternalEvent('message', {
+      role: 'user',
+      content: message,
+      ...(payload._meta ? { _meta: payload._meta } : {}),
     });
 
-    return { streamId: this._translationState.streamId };
-  }
-
-  /**
-   * Returns an async iterator that replays existing events, then live-follows
-   * new events as they arrive. Terminates after yielding a stream_end event,
-   * consistent with MockAgentSession behavior.
-   */
-  async *stream(options?: {
-    streamId?: string;
-    eventId?: string;
-  }): AsyncIterableIterator<AgentEvent> {
-    let streamId = options?.streamId;
-    let startIndex = 0;
-
-    if (options?.eventId) {
-      const idx = this._events.findIndex((e) => e.id === options.eventId);
-      if (idx === -1) {
-        throw new Error(`Event not found: ${options.eventId}`);
+    void Promise.resolve().then(async () => {
+      this._emit([userMessage]);
+      this._ensureAgentStart();
+      try {
+        await this._runLoop(parts);
+      } catch (err: unknown) {
+        this._emitErrorAndAgentEnd(err);
+        this._markStreamDone();
       }
+    });
 
-      const event = this._events[idx];
-      streamId = streamId ?? event?.streamId;
-      if (!streamId) {
-        throw new Error(`Event not associated with a stream: ${options.eventId}`);
-      }
-      if (options.streamId && event?.streamId && event.streamId !== options.streamId) {
-        throw new Error(
-          `Event ${options.eventId} does not belong to stream ${options.streamId}`,
-        );
-      }
-      startIndex = idx + 1;
-    }
-
-    if (streamId) {
-      yield* this._streamById(streamId, startIndex);
-      return;
-    }
-
-    const lastSeenStreamId = this._lastStartedStreamId;
-    while (!this._activeStreamId && this._lastStartedStreamId === lastSeenStreamId) {
-      await this._waitForUpdate();
-    }
-
-    const targetStreamId = this._activeStreamId ?? this._lastStartedStreamId;
-    if (!targetStreamId) {
-      return;
-    }
-
-    yield* this._streamById(targetStreamId, 0);
+    return { streamId };
   }
 
   async abort(): Promise<void> {
     this._abortController.abort();
   }
 
-  get events(): AgentEvent[] {
-    return this._events;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Core: agentic loop
-  // ---------------------------------------------------------------------------
-
   private async _runLoop(initialParts: Part[]): Promise<void> {
     let currentParts: Part[] = initialParts;
     let turnCount = 0;
     const maxTurns = this._config.getMaxSessionTurns();
 
-    try {
-      while (true) {
-        turnCount++;
-        if (maxTurns >= 0 && turnCount > maxTurns) {
-          this._ensureStreamStart();
-          this._appendAndNotify([
-            this._makeInternalEvent('stream_end', {
-              streamId: this._translationState.streamId,
-              reason: 'max_turns',
-              data: {
-                code: 'MAX_TURNS_EXCEEDED',
-                maxTurns,
-                turnCount: turnCount - 1,
-              },
-            }),
-          ]);
-          this._markStreamDone();
-          return;
-        }
-
-        const toolCallRequests: ToolCallRequestInfo[] = [];
-
-        const responseStream = this._client.sendMessageStream(
-          currentParts,
-          this._abortController.signal,
-          this._promptId,
-        );
-
-        // Process the stream — translate events and collect tool requests
-        for await (const event of responseStream) {
-          if (this._abortController.signal.aborted) {
-            this._ensureStreamStart();
-            this._appendAndNotify([
-              this._makeInternalEvent('stream_end', {
-                streamId: this._translationState.streamId,
-                reason: 'aborted',
-              }),
-            ]);
-            this._markStreamDone();
-            return;
-          }
-
-          // Collect tool call requests BEFORE translating so we can decide
-          // whether this turn is terminal after a Finished event.
-          if (event.type === GeminiEventType.ToolCallRequest) {
-            toolCallRequests.push(event.value);
-          }
-
-          // Translate to AgentEvents
-          const agentEvents = translateEvent(event, this._translationState);
-          this._appendAndNotify(agentEvents);
-
-          // Error events → abort the loop
-          if (event.type === GeminiEventType.Error) {
-            this._ensureStreamEnd('failed');
-            this._markStreamDone();
-            return;
-          }
-
-          // Fatal error events that translator doesn't emit stream_end for
-          if (
-            event.type === GeminiEventType.InvalidStream ||
-            event.type === GeminiEventType.ContextWindowWillOverflow
-          ) {
-            this._ensureStreamEnd('failed');
-            this._markStreamDone();
-            return;
-          }
-
-          if (event.type === GeminiEventType.Finished) {
-            if (toolCallRequests.length === 0) {
-              this._ensureStreamEnd(mapFinishReason(event.value.reason));
-              this._markStreamDone();
-              return;
-            }
-
-            continue;
-          }
-
-          // Terminal events — translator already emitted stream_end
-          if (
-            event.type === GeminiEventType.AgentExecutionStopped ||
-            event.type === GeminiEventType.UserCancelled ||
-            event.type === GeminiEventType.MaxSessionTurns
-          ) {
-            this._markStreamDone();
-            return;
-          }
-          // LoopDetected is NOT terminal — the stream continues.
-          // Consumer handles it (warning in non-interactive, dialog in interactive).
-        }
-
-        if (toolCallRequests.length === 0) {
-          this._ensureStreamEnd('completed');
-          this._markStreamDone();
-          return;
-        }
-
-        // Schedule tool calls
-        const completedToolCalls = await this._scheduler.schedule(
-          toolCallRequests,
-          this._abortController.signal,
-        );
-
-        // Emit tool_response AgentEvents for each completed tool call
-        const toolResponseParts: Part[] = [];
-        for (const tc of completedToolCalls) {
-          const response = tc.response;
-          const request = tc.request;
-
-          const content: ContentPart[] = response.error
-            ? [{ type: 'text', text: response.error.message }]
-            : geminiPartsToContentParts(response.responseParts);
-          const displayContent = toolResultDisplayToContentParts(
-            response.resultDisplay,
-          );
-          const data = buildToolResponseData(response);
-
-          this._appendAndNotify([
-            this._makeInternalEvent('tool_response', {
-              requestId: request.callId,
-              name: request.name,
-              content,
-              isError: response.error !== undefined,
-              ...(displayContent ? { displayContent } : {}),
-              ...(data ? { data } : {}),
-            }),
-          ]);
-
-          if (response.responseParts) {
-            toolResponseParts.push(...response.responseParts);
-          }
-        }
-
-        // Record tool calls in chat history
-        try {
-          const currentModel =
-            this._client.getCurrentSequenceModel() ?? this._config.getModel();
-          this._client
-            .getChat()
-            .recordCompletedToolCalls(currentModel, completedToolCalls);
-
-          await recordToolCallInteractions(this._config, completedToolCalls);
-        } catch (error) {
-          debugLogger.error(
-            `Error recording completed tool call information: ${error}`,
-          );
-        }
-
-        // Check if a tool requested stop execution
-        const stopTool = completedToolCalls.find(
-          (tc) =>
-            tc.response.errorType === ToolErrorType.STOP_EXECUTION &&
-            tc.response.error !== undefined,
-        );
-        if (stopTool) {
-          this._ensureStreamEnd('completed');
-          this._markStreamDone();
-          return;
-        }
-
-        // Check for fatal tool errors
-        const fatalTool = completedToolCalls.find((tc) =>
-          isFatalToolError(tc.response.errorType),
-        );
-        if (fatalTool) {
-          const msg = fatalTool.response.error?.message ?? 'Fatal tool error';
-          this._appendAndNotify([
-            this._makeInternalEvent('error', {
-              status: 'INTERNAL',
-              message: `Fatal tool error (${fatalTool.request.name}): ${msg}`,
-              fatal: true,
-            }),
-          ]);
-          this._ensureStreamEnd('failed');
-          this._markStreamDone();
-          return;
-        }
-
-        // Feed tool results back for next turn
-        currentParts = toolResponseParts;
-      }
-    } catch (err: unknown) {
-      this._emitErrorAndStreamEnd(err);
-      this._markStreamDone();
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Internal helpers
-  // ---------------------------------------------------------------------------
-
-  /** Marks the active stream as complete and notifies stream subscribers. */
-  private _markStreamDone(): void {
-    this._activeStreamId = undefined;
-    this._notifySubscribers();
-  }
-
-  private _beginNewStream(): void {
-    const streamId =
-      this._events.length === 0 ? this._translationState.streamId : undefined;
-    this._translationState = createTranslationState(streamId);
-    this._abortController = new AbortController();
-    this._streamEndEmitted = false;
-    this._activeStreamId = this._translationState.streamId;
-    this._lastStartedStreamId = this._translationState.streamId;
-  }
-
-  private _appendAndNotify(events: AgentEvent[]): void {
-    for (const event of events) {
-      this._events.push(event);
-      if (event.type === 'stream_end') {
-        this._streamEndEmitted = true;
-      }
-    }
-    if (events.length > 0) {
-      this._notifySubscribers();
-    }
-  }
-
-  private _notifySubscribers(): void {
-    for (const handler of this._subscribers) {
-      handler();
-    }
-  }
-
-  private async _waitForUpdate(): Promise<void> {
-    await new Promise<void>((resolve) => {
-      const handler = (): void => {
-        this._subscribers.delete(handler);
-        resolve();
-      };
-      this._subscribers.add(handler);
-    });
-  }
-
-  private _hasSeenStream(streamId: string): boolean {
-    return (
-      this._activeStreamId === streamId ||
-      this._lastStartedStreamId === streamId ||
-      this._events.some((event) => event.streamId === streamId)
-    );
-  }
-
-  private async *_streamById(
-    streamId: string,
-    startIndex: number,
-  ): AsyncIterableIterator<AgentEvent> {
-    if (!this._hasSeenStream(streamId)) {
-      throw new Error(`Stream not found: ${streamId}`);
-    }
-
-    let replayedUpTo = startIndex;
-
     while (true) {
-      while (replayedUpTo < this._events.length) {
-        const event = this._events[replayedUpTo];
-        replayedUpTo++;
-        if (!event || event.streamId !== streamId) {
-          continue;
-        }
-
-        yield event;
-        if (event.type === 'stream_end') {
-          return;
-        }
-      }
-
-      if (this._activeStreamId !== streamId) {
+      turnCount++;
+      if (maxTurns >= 0 && turnCount > maxTurns) {
+        this._emit([
+          this._makeInternalEvent('agent_end', {
+            reason: 'max_turns',
+            data: {
+              code: 'MAX_TURNS_EXCEEDED',
+              maxTurns,
+              turnCount: turnCount - 1,
+            },
+          }),
+        ]);
+        this._markStreamDone();
         return;
       }
 
-      await this._waitForUpdate();
+      const toolCallRequests: ToolCallRequestInfo[] = [];
+      const responseStream = this._client.sendMessageStream(
+        currentParts,
+        this._abortController.signal,
+        this._promptId,
+      );
+
+      for await (const event of responseStream) {
+        if (this._abortController.signal.aborted) {
+          this._ensureAgentEnd('aborted');
+          this._markStreamDone();
+          return;
+        }
+
+        if (event.type === GeminiEventType.ToolCallRequest) {
+          toolCallRequests.push(event.value);
+        }
+
+        this._emit(translateEvent(event, this._translationState));
+
+        if (event.type === GeminiEventType.Error) {
+          this._ensureAgentEnd('failed');
+          this._markStreamDone();
+          return;
+        }
+
+        if (
+          event.type === GeminiEventType.InvalidStream ||
+          event.type === GeminiEventType.ContextWindowWillOverflow
+        ) {
+          this._ensureAgentEnd('failed');
+          this._markStreamDone();
+          return;
+        }
+
+        if (event.type === GeminiEventType.Finished) {
+          if (toolCallRequests.length === 0) {
+            this._ensureAgentEnd(mapFinishReason(event.value.reason));
+            this._markStreamDone();
+            return;
+          }
+          continue;
+        }
+
+        if (
+          event.type === GeminiEventType.AgentExecutionStopped ||
+          event.type === GeminiEventType.UserCancelled ||
+          event.type === GeminiEventType.MaxSessionTurns
+        ) {
+          this._markStreamDone();
+          return;
+        }
+      }
+
+      if (toolCallRequests.length === 0) {
+        this._ensureAgentEnd('completed');
+        this._markStreamDone();
+        return;
+      }
+
+      const completedToolCalls = await this._scheduler.schedule(
+        toolCallRequests,
+        this._abortController.signal,
+      );
+
+      const toolResponseParts: Part[] = [];
+      for (const tc of completedToolCalls) {
+        const response = tc.response;
+        const request = tc.request;
+        const content: ContentPart[] = response.error
+          ? [{ type: 'text', text: response.error.message }]
+          : geminiPartsToContentParts(response.responseParts);
+        const displayContent = toolResultDisplayToContentParts(
+          response.resultDisplay,
+        );
+        const data = buildToolResponseData(response);
+
+        this._emit([
+          this._makeInternalEvent('tool_response', {
+            requestId: request.callId,
+            name: request.name,
+            content,
+            isError: response.error !== undefined,
+            ...(displayContent ? { displayContent } : {}),
+            ...(data ? { data } : {}),
+          }),
+        ]);
+
+        if (response.responseParts) {
+          toolResponseParts.push(...response.responseParts);
+        }
+      }
+
+      try {
+        const currentModel =
+          this._client.getCurrentSequenceModel() ?? this._config.getModel();
+        this._client
+          .getChat()
+          .recordCompletedToolCalls(currentModel, completedToolCalls);
+        await recordToolCallInteractions(this._config, completedToolCalls);
+      } catch (error) {
+        debugLogger.error(
+          `Error recording completed tool call information: ${error}`,
+        );
+      }
+
+      const stopTool = completedToolCalls.find(
+        (tc) =>
+          tc.response.errorType === ToolErrorType.STOP_EXECUTION &&
+          tc.response.error !== undefined,
+      );
+      if (stopTool) {
+        this._ensureAgentEnd('completed');
+        this._markStreamDone();
+        return;
+      }
+
+      const fatalTool = completedToolCalls.find((tc) =>
+        isFatalToolError(tc.response.errorType),
+      );
+      if (fatalTool) {
+        const msg = fatalTool.response.error?.message ?? 'Fatal tool error';
+        this._emit([
+          this._makeInternalEvent('error', {
+            status: 'INTERNAL',
+            message: `Fatal tool error (${fatalTool.request.name}): ${msg}`,
+            fatal: true,
+          }),
+        ]);
+        this._ensureAgentEnd('failed');
+        this._markStreamDone();
+        return;
+      }
+
+      currentParts = toolResponseParts;
     }
   }
 
-  private _ensureStreamStart(): void {
+  private _emit(events: AgentEvent[]): void {
+    if (events.length === 0) {
+      return;
+    }
+
+    const subscribers = [...this._subscribers];
+    for (const event of events) {
+      if (!this._events.some((existing) => existing.id === event.id)) {
+        this._events.push(event);
+      }
+      if (event.type === 'agent_end') {
+        this._agentEndEmitted = true;
+      }
+      for (const subscriber of subscribers) {
+        subscriber(event);
+      }
+    }
+  }
+
+  private _markStreamDone(): void {
+    this._activeStreamId = undefined;
+  }
+
+  private _beginNewStream(): void {
+    this._translationState = createTranslationState(this._nextStreamIdOverride);
+    this._nextStreamIdOverride = undefined;
+    this._abortController = new AbortController();
+    this._agentEndEmitted = false;
+    this._activeStreamId = this._translationState.streamId;
+  }
+
+  private _ensureAgentStart(): void {
     if (!this._translationState.streamStartEmitted) {
-      const startEvent = this._makeInternalEvent('stream_start', {
-        streamId: this._translationState.streamId,
-      });
-      this._events.push(startEvent);
       this._translationState.streamStartEmitted = true;
-      this._notifySubscribers();
+      this._emit([this._makeInternalEvent('agent_start', {})]);
     }
   }
 
-  private _ensureStreamEnd(reason: StreamEndReason = 'completed'): void {
-    if (!this._streamEndEmitted && this._translationState.streamStartEmitted) {
-      this._streamEndEmitted = true;
-      const endEvent = this._makeInternalEvent('stream_end', {
-        streamId: this._translationState.streamId,
-        reason,
-      });
-      this._events.push(endEvent);
-      this._notifySubscribers();
+  private _ensureAgentEnd(reason: StreamEndReason = 'completed'): void {
+    if (!this._agentEndEmitted && this._translationState.streamStartEmitted) {
+      this._agentEndEmitted = true;
+      this._emit([
+        this._makeInternalEvent('agent_end', {
+          reason,
+        }),
+      ]);
     }
   }
 
@@ -476,10 +335,10 @@ export class LegacyAgentSession implements AgentSession {
    * Preserve error identity fields in _meta so downstream consumers can
    * reconstruct fatal CLI errors.
    */
-  private _emitErrorAndStreamEnd(err: unknown): void {
+  private _emitErrorAndAgentEnd(err: unknown): void {
     const message = err instanceof Error ? err.message : String(err);
 
-    this._ensureStreamStart();
+    this._ensureAgentStart();
 
     const meta: Record<string, unknown> = {};
     if (err instanceof Error) {
@@ -492,16 +351,16 @@ export class LegacyAgentSession implements AgentSession {
       }
     }
 
-    const errorEvent = this._makeInternalEvent('error', {
-      status: 'INTERNAL' as const,
-      message,
-      fatal: true,
-      ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
-    });
-    this._events.push(errorEvent);
+    this._emit([
+      this._makeInternalEvent('error', {
+        status: 'INTERNAL',
+        message,
+        fatal: true,
+        ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
+      }),
+    ]);
 
-    this._ensureStreamEnd('failed');
-    this._notifySubscribers();
+    this._ensureAgentEnd('failed');
   }
 
   private _makeInternalEvent(
@@ -509,7 +368,6 @@ export class LegacyAgentSession implements AgentSession {
     payload: Partial<AgentEvent>,
   ): AgentEvent {
     const id = `${this._translationState.streamId}-${this._translationState.eventCounter++}`;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- constructing AgentEvent from common fields + payload
     return {
       ...payload,
       id,
@@ -520,5 +378,8 @@ export class LegacyAgentSession implements AgentSession {
   }
 }
 
-// Re-export Part type alias for internal use (avoids importing @google/genai directly)
-type Part = import('@google/genai').Part;
+export class LegacyAgentSession extends AgentSession {
+  constructor(deps: LegacySessionDeps) {
+    super(new LegacyAgentProtocol(deps));
+  }
+}

@@ -101,16 +101,21 @@ async function collectEvents(
   options?: { streamId?: string; eventId?: string },
 ): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
-  const latestStreamId =
-    options?.streamId ??
-    (options?.eventId
-      ? undefined
-      : session.events.findLast((event) => event.type === 'stream_start')
-          ?.streamId);
-  const streamOptions =
-    latestStreamId || options?.eventId
-      ? { ...options, ...(latestStreamId ? { streamId: latestStreamId } : {}) }
-      : options;
+  const streamOptions = options?.eventId
+    ? {
+        eventId: options.eventId,
+        ...(options.streamId ? { streamId: options.streamId } : {}),
+      }
+    : {
+        streamId:
+          options?.streamId ??
+          session.events.findLast((event) => event.type === 'agent_start')
+            ?.streamId,
+      };
+
+  if (!streamOptions.eventId && !streamOptions.streamId) {
+    return events;
+  }
 
   for await (const event of session.stream(streamOptions)) {
     events.push(event);
@@ -171,11 +176,13 @@ describe('LegacyAgentSession', () => {
         message: [{ type: 'text', text: 'hi' }],
         _meta: { source: 'user-test' },
       });
-      const events = await collectEvents(session, { streamId });
+      await collectEvents(session, { streamId });
 
-      const userMessage = events.find(
+      const userMessage = session.events.find(
         (e): e is AgentEvent<'message'> =>
-          e.type === 'message' && e.role === 'user',
+          e.type === 'message' &&
+          e.role === 'user' &&
+          e.streamId === streamId,
       );
       expect(userMessage?.content).toEqual([{ type: 'text', text: 'hi' }]);
       expect(userMessage?._meta).toEqual({ source: 'user-test' });
@@ -254,31 +261,35 @@ describe('LegacyAgentSession', () => {
       const secondEvents = await collectEvents(session, {
         streamId: second.streamId,
       });
+      const userMessages = session.events.filter(
+        (e): e is AgentEvent<'message'> =>
+          e.type === 'message' && e.role === 'user',
+      );
 
       expect(first.streamId).not.toBe(second.streamId);
       expect(
-        firstEvents.some(
+        userMessages.some(
           (e) =>
-            e.type === 'message' &&
-            e.role === 'user' &&
+            e.streamId === first.streamId &&
             e.content[0]?.type === 'text' &&
             e.content[0].text === 'first',
         ),
       ).toBe(true);
       expect(
-        secondEvents.some(
+        userMessages.some(
           (e) =>
-            e.type === 'message' &&
-            e.role === 'user' &&
+            e.streamId === second.streamId &&
             e.content[0]?.type === 'text' &&
             e.content[0].text === 'second',
         ),
       ).toBe(true);
+      expect(firstEvents.some((e) => e.type === 'agent_end')).toBe(true);
+      expect(secondEvents.some((e) => e.type === 'agent_end')).toBe(true);
     });
   });
 
   describe('stream - basic flow', () => {
-    it('emits stream_start, content messages, and stream_end', async () => {
+    it('emits agent_start, content messages, and agent_end', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn
       >;
@@ -298,9 +309,9 @@ describe('LegacyAgentSession', () => {
       const events = await collectEvents(session);
 
       const types = events.map((e) => e.type);
-      expect(types).toContain('stream_start');
+      expect(types).toContain('agent_start');
       expect(types).toContain('message');
-      expect(types).toContain('stream_end');
+      expect(types).toContain('agent_end');
 
       const messages = events.filter(
         (e): e is AgentEvent<'message'> =>
@@ -310,7 +321,7 @@ describe('LegacyAgentSession', () => {
       expect(messages[0]?.content).toEqual([{ type: 'text', text: 'Hello' }]);
 
       const streamEnd = events.find(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('completed');
     });
@@ -357,7 +368,7 @@ describe('LegacyAgentSession', () => {
       const types = events.map((e) => e.type);
       expect(types).toContain('tool_request');
       expect(types).toContain('tool_response');
-      expect(types).toContain('stream_end');
+      expect(types).toContain('agent_end');
 
       const toolReq = events.find(
         (e): e is AgentEvent<'tool_request'> => e.type === 'tool_request',
@@ -476,7 +487,7 @@ describe('LegacyAgentSession', () => {
       const events = await collectEvents(session);
 
       const streamEnd = events.find(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('completed');
       // Should NOT make a second call
@@ -503,7 +514,7 @@ describe('LegacyAgentSession', () => {
       const events = await collectEvents(session);
 
       const streamEnd = events.find(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('completed');
       expect(streamEnd?.data).toEqual({ message: 'Halted by hook' });
@@ -551,7 +562,7 @@ describe('LegacyAgentSession', () => {
       ).toBe(true);
 
       const streamEnd = events.find(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('completed');
     });
@@ -577,7 +588,7 @@ describe('LegacyAgentSession', () => {
         (e): e is AgentEvent<'error'> => e.type === 'error',
       );
       expect(err?.message).toBe('API error');
-      expect(events.some((e) => e.type === 'stream_end')).toBe(true);
+      expect(events.some((e) => e.type === 'agent_end')).toBe(true);
     });
 
     it('handles LoopDetected as non-terminal custom event', async () => {
@@ -620,16 +631,16 @@ describe('LegacyAgentSession', () => {
         ),
       ).toBe(true);
 
-      // Should still end with stream_end completed
+      // Should still end with agent_end completed
       const streamEnd = events.find(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('completed');
     });
   });
 
   describe('stream - max turns', () => {
-    it('emits stream_end with max_turns when the session turn limit is exceeded', async () => {
+    it('emits agent_end with max_turns when the session turn limit is exceeded', async () => {
       const configMock = deps.config.getMaxSessionTurns as ReturnType<
         typeof vi.fn
       >;
@@ -649,7 +660,7 @@ describe('LegacyAgentSession', () => {
       const events = await collectEvents(session);
 
       const streamEnd = events.find(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('max_turns');
       expect(streamEnd?.data).toEqual({
@@ -680,7 +691,7 @@ describe('LegacyAgentSession', () => {
       expect(errorEvents).toHaveLength(0);
 
       const streamEnd = events.findLast(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('max_turns');
       expect(streamEnd?.data).toEqual({
@@ -727,7 +738,7 @@ describe('LegacyAgentSession', () => {
       const events = await collectEvents(session);
 
       const streamEnd = events.find(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('aborted');
     });
@@ -753,12 +764,12 @@ describe('LegacyAgentSession', () => {
       await collectEvents(session);
 
       expect(session.events.length).toBeGreaterThan(0);
-      expect(session.events[0]?.type).toBe('stream_start');
+      expect(session.events[0]?.type).toBe('message');
     });
   });
 
-  describe('stream scoping', () => {
-    it('waits for the next stream when called while idle', async () => {
+  describe('subscription and stream scoping', () => {
+    it('subscribe receives live events for the next stream', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn
       >;
@@ -773,25 +784,25 @@ describe('LegacyAgentSession', () => {
       );
 
       const session = new LegacyAgentSession(deps);
-      const pendingEvents = (async () => {
-        const events: AgentEvent[] = [];
-        for await (const event of session.stream()) {
-          events.push(event);
-        }
-        return events;
-      })();
+      const liveEvents: AgentEvent[] = [];
+      const unsubscribe = session.subscribe((event) => {
+        liveEvents.push(event);
+      });
 
       const { streamId } = await session.send({
         message: [{ type: 'text', text: 'hi' }],
       });
-      const events = await pendingEvents;
+      await collectEvents(session, { streamId });
+      unsubscribe();
 
-      expect(events.length).toBeGreaterThan(0);
-      expect(events[0]?.type).toBe('stream_start');
-      expect(events.every((event) => event.streamId === streamId)).toBe(true);
+      expect(liveEvents.length).toBeGreaterThan(0);
+      expect(liveEvents[0]?.type).toBe('message');
+      expect(liveEvents.every((event) => event.streamId === streamId)).toBe(
+        true,
+      );
     });
 
-    it('waits for the next stream instead of replaying old history when idle', async () => {
+    it('subscribe is live-only and does not replay old history when idle', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn
       >;
@@ -821,25 +832,25 @@ describe('LegacyAgentSession', () => {
       });
       await collectEvents(session, { streamId: first.streamId });
 
-      const pendingEvents = (async () => {
-        const events: AgentEvent[] = [];
-        for await (const event of session.stream()) {
-          events.push(event);
-        }
-        return events;
-      })();
+      const liveEvents: AgentEvent[] = [];
+      const unsubscribe = session.subscribe((event) => {
+        liveEvents.push(event);
+      });
 
       const second = await session.send({
         message: [{ type: 'text', text: 'second request' }],
       });
-      const events = await pendingEvents;
+      await collectEvents(session, { streamId: second.streamId });
+      unsubscribe();
 
-      expect(events.length).toBeGreaterThan(0);
-      expect(events.every((event) => event.streamId === second.streamId)).toBe(
+      expect(liveEvents.length).toBeGreaterThan(0);
+      expect(
+        liveEvents.every((event) => event.streamId === second.streamId),
+      ).toBe(
         true,
       );
       expect(
-        events.some(
+        liveEvents.some(
           (event) =>
             event.type === 'message' &&
             event.role === 'user' &&
@@ -888,25 +899,25 @@ describe('LegacyAgentSession', () => {
         streamId: first.streamId,
       });
 
-      expect(firstStreamEvents.every((event) => event.streamId === first.streamId)).toBe(
-        true,
-      );
+      expect(
+        firstStreamEvents.every((event) => event.streamId === first.streamId),
+      ).toBe(true);
       expect(
         firstStreamEvents.some(
           (e) =>
             e.type === 'message' &&
-            e.role === 'user' &&
+            e.role === 'agent' &&
             e.content[0]?.type === 'text' &&
-            e.content[0].text === 'first request',
+            e.content[0].text === 'first answer',
         ),
       ).toBe(true);
       expect(
         firstStreamEvents.some(
           (e) =>
             e.type === 'message' &&
-            e.role === 'user' &&
+            e.role === 'agent' &&
             e.content[0]?.type === 'text' &&
-            e.content[0].text === 'second request',
+            e.content[0].text === 'second answer',
         ),
       ).toBe(false);
     });
@@ -939,16 +950,18 @@ describe('LegacyAgentSession', () => {
       const first = await session.send({
         message: [{ type: 'text', text: 'first request' }],
       });
-      const firstEvents = await collectEvents(session, { streamId: first.streamId });
+      await collectEvents(session, { streamId: first.streamId });
 
       await session.send({
         message: [{ type: 'text', text: 'second request' }],
       });
       await collectEvents(session);
 
-      const firstUserMessage = firstEvents.find(
+      const firstUserMessage = session.events.find(
         (e): e is AgentEvent<'message'> =>
-          e.type === 'message' && e.role === 'user',
+          e.type === 'message' &&
+          e.role === 'user' &&
+          e.streamId === first.streamId,
       );
       expect(firstUserMessage).toBeDefined();
 
@@ -978,60 +991,10 @@ describe('LegacyAgentSession', () => {
       ).toBe(false);
     });
 
-    it('throws if eventId and streamId point at different streams', async () => {
-      const sendMock = deps.client.sendMessageStream as ReturnType<
-        typeof vi.fn
-      >;
-      sendMock
-        .mockReturnValueOnce(
-          makeStream([
-            { type: GeminiEventType.Content, value: 'first answer' },
-            {
-              type: GeminiEventType.Finished,
-              value: { reason: FinishReason.STOP, usageMetadata: undefined },
-            },
-          ]),
-        )
-        .mockReturnValueOnce(
-          makeStream([
-            { type: GeminiEventType.Content, value: 'second answer' },
-            {
-              type: GeminiEventType.Finished,
-              value: { reason: FinishReason.STOP, usageMetadata: undefined },
-            },
-          ]),
-        );
-
-      const session = new LegacyAgentSession(deps);
-      const first = await session.send({
-        message: [{ type: 'text', text: 'first request' }],
-      });
-      const firstEvents = await collectEvents(session, { streamId: first.streamId });
-
-      const second = await session.send({
-        message: [{ type: 'text', text: 'second request' }],
-      });
-      await collectEvents(session, { streamId: second.streamId });
-
-      const firstUserMessage = firstEvents.find(
-        (event): event is AgentEvent<'message'> =>
-          event.type === 'message' && event.role === 'user',
-      );
-      expect(firstUserMessage).toBeDefined();
-
-      await expect(
-        collectEvents(session, {
-          streamId: second.streamId,
-          eventId: firstUserMessage?.id,
-        }),
-      ).rejects.toThrow(
-        `Event ${firstUserMessage?.id} does not belong to stream ${second.streamId}`,
-      );
-    });
   });
 
-  describe('stream_end ordering', () => {
-    it('stream_end is always the final event yielded', async () => {
+  describe('agent_end ordering', () => {
+    it('agent_end is always the final event yielded', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn
       >;
@@ -1050,10 +1013,10 @@ describe('LegacyAgentSession', () => {
       const events = await collectEvents(session);
 
       expect(events.length).toBeGreaterThan(0);
-      expect(events[events.length - 1]?.type).toBe('stream_end');
+      expect(events[events.length - 1]?.type).toBe('agent_end');
     });
 
-    it('stream_end is final even after error events', async () => {
+    it('agent_end is final even after error events', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn
       >;
@@ -1070,16 +1033,16 @@ describe('LegacyAgentSession', () => {
       await session.send({ message: [{ type: 'text', text: 'hi' }] });
       const events = await collectEvents(session);
 
-      expect(events[events.length - 1]?.type).toBe('stream_end');
+      expect(events[events.length - 1]?.type).toBe('agent_end');
     });
   });
 
   describe('intermediate Finished events', () => {
-    it('does NOT emit stream_end when tool calls are pending', async () => {
+    it('does NOT emit agent_end when tool calls are pending', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn
       >;
-      // First turn: tool request + Finished (should NOT produce stream_end)
+      // First turn: tool request + Finished (should NOT produce agent_end)
       sendMock.mockReturnValueOnce(
         makeStream([
           {
@@ -1118,8 +1081,8 @@ describe('LegacyAgentSession', () => {
       await session.send({ message: [{ type: 'text', text: 'do it' }] });
       const events = await collectEvents(session);
 
-      // Only one stream_end at the very end
-      const streamEnds = events.filter((e) => e.type === 'stream_end');
+      // Only one agent_end at the very end
+      const streamEnds = events.filter((e) => e.type === 'agent_end');
       expect(streamEnds).toHaveLength(1);
       expect(streamEnds[0]).toBe(events[events.length - 1]);
     });
@@ -1176,7 +1139,7 @@ describe('LegacyAgentSession', () => {
   });
 
   describe('error handling in runLoop', () => {
-    it('catches thrown errors and emits error + stream_end', async () => {
+    it('catches thrown errors and emits error + agent_end', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn
       >;
@@ -1195,13 +1158,13 @@ describe('LegacyAgentSession', () => {
       expect(err?.fatal).toBe(true);
 
       const streamEnd = events.find(
-        (e): e is AgentEvent<'stream_end'> => e.type === 'stream_end',
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
       );
       expect(streamEnd?.reason).toBe('failed');
     });
   });
 
-  describe('_emitErrorAndStreamEnd metadata', () => {
+  describe('_emitErrorAndAgentEnd metadata', () => {
     it('preserves exitCode and code in _meta for FatalError', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn

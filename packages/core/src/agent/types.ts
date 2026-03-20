@@ -54,7 +54,7 @@ interface AgentSendPayloads {
 export type AgentSend = RequireExactlyOne<AgentSendPayloads> & WithMeta;
 
 export interface Trajectory {
-  readonly events: AgentEvent[];
+  readonly events: readonly AgentEvent[];
 }
 
 export interface AgentEventCommon {
