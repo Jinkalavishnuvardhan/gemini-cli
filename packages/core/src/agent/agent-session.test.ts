@@ -225,6 +225,33 @@ describe('AgentSession', () => {
       expect(streamedEvents.at(-1)?.type).toBe('agent_end');
     });
 
+    it('should not drop agent_end that arrives while replay events are being yielded', async () => {
+      const protocol = new MockAgentProtocol();
+      const session = new AgentSession(protocol);
+
+      protocol.pushResponse([{ type: 'message' }], { keepOpen: true });
+      const { streamId } = await session.send({ update: { title: 't1' } });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const iterator = session
+        .stream({ streamId: streamId! })
+        [Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      expect(first.value?.type).toBe('agent_start');
+
+      protocol.pushToStream(streamId!, [], { close: true });
+
+      const second = await iterator.next();
+      expect(second.value?.type).toBe('message');
+
+      const third = await iterator.next();
+      expect(third.value?.type).toBe('agent_end');
+
+      const fourth = await iterator.next();
+      expect(fourth.done).toBe(true);
+    });
+
     it('should follow an active stream if no options provided', async () => {
       const protocol = new MockAgentProtocol();
       const session = new AgentSession(protocol);

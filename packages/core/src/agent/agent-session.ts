@@ -200,6 +200,7 @@ export class AgentSession implements AgentProtocol {
           for (const event of eventsToYield) {
             yield event;
           }
+          continue;
         }
 
         if (done) break;

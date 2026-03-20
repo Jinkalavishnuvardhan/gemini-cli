@@ -101,7 +101,8 @@ async function collectEvents(
   options?: { streamId?: string; eventId?: string },
 ): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
-  const streamOptions = options?.eventId
+  const streamOptions: { streamId?: string; eventId?: string } = options
+    ?.eventId
     ? {
         eventId: options.eventId,
         ...(options.streamId ? { streamId: options.streamId } : {}),
@@ -176,7 +177,7 @@ describe('LegacyAgentSession', () => {
         message: [{ type: 'text', text: 'hi' }],
         _meta: { source: 'user-test' },
       });
-      await collectEvents(session, { streamId });
+      await collectEvents(session, { streamId: streamId ?? undefined });
 
       const userMessage = session.events.find(
         (e): e is AgentEvent<'message'> =>
@@ -252,14 +253,14 @@ describe('LegacyAgentSession', () => {
         message: [{ type: 'text', text: 'first' }],
       });
       const firstEvents = await collectEvents(session, {
-        streamId: first.streamId,
+        streamId: first.streamId ?? undefined,
       });
 
       const second = await session.send({
         message: [{ type: 'text', text: 'second' }],
       });
       const secondEvents = await collectEvents(session, {
-        streamId: second.streamId,
+        streamId: second.streamId ?? undefined,
       });
       const userMessages = session.events.filter(
         (e): e is AgentEvent<'message'> =>
@@ -792,7 +793,7 @@ describe('LegacyAgentSession', () => {
       const { streamId } = await session.send({
         message: [{ type: 'text', text: 'hi' }],
       });
-      await collectEvents(session, { streamId });
+      await collectEvents(session, { streamId: streamId ?? undefined });
       unsubscribe();
 
       expect(liveEvents.length).toBeGreaterThan(0);
@@ -830,7 +831,7 @@ describe('LegacyAgentSession', () => {
       const first = await session.send({
         message: [{ type: 'text', text: 'first request' }],
       });
-      await collectEvents(session, { streamId: first.streamId });
+      await collectEvents(session, { streamId: first.streamId ?? undefined });
 
       const liveEvents: AgentEvent[] = [];
       const unsubscribe = session.subscribe((event) => {
@@ -840,7 +841,7 @@ describe('LegacyAgentSession', () => {
       const second = await session.send({
         message: [{ type: 'text', text: 'second request' }],
       });
-      await collectEvents(session, { streamId: second.streamId });
+      await collectEvents(session, { streamId: second.streamId ?? undefined });
       unsubscribe();
 
       expect(liveEvents.length).toBeGreaterThan(0);
@@ -888,15 +889,15 @@ describe('LegacyAgentSession', () => {
       const first = await session.send({
         message: [{ type: 'text', text: 'first request' }],
       });
-      await collectEvents(session, { streamId: first.streamId });
+      await collectEvents(session, { streamId: first.streamId ?? undefined });
 
       const second = await session.send({
         message: [{ type: 'text', text: 'second request' }],
       });
-      await collectEvents(session, { streamId: second.streamId });
+      await collectEvents(session, { streamId: second.streamId ?? undefined });
 
       const firstStreamEvents = await collectEvents(session, {
-        streamId: first.streamId,
+        streamId: first.streamId ?? undefined,
       });
 
       expect(
@@ -950,7 +951,7 @@ describe('LegacyAgentSession', () => {
       const first = await session.send({
         message: [{ type: 'text', text: 'first request' }],
       });
-      await collectEvents(session, { streamId: first.streamId });
+      await collectEvents(session, { streamId: first.streamId ?? undefined });
 
       await session.send({
         message: [{ type: 'text', text: 'second request' }],

@@ -90,6 +90,9 @@ class LegacyAgentProtocol implements AgentProtocol {
     }
 
     if (this._activeStreamId) {
+      // TODO: Interactive may eventually allow selected in-stream sends such as
+      // updates or elicitation responses. Keep rejecting all concurrent sends
+      // here until we define those correlation semantics.
       throw new Error(
         'LegacyAgentSession.send() cannot be called while a stream is active.',
       );
