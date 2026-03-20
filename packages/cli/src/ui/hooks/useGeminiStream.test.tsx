@@ -3248,6 +3248,10 @@ describe('useGeminiStream', () => {
         ),
       );
 
+      // Reset start time after hook render, because renderHook (async)
+      // advances fake timers by 50ms during its internal waitUntilReady() check.
+      vi.setSystemTime(startTime);
+
       // Submit query
       await act(async () => {
         await result.current.submitQuery('Test query');
