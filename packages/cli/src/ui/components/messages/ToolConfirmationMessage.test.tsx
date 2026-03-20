@@ -453,7 +453,6 @@ describe('ToolConfirmationMessage', () => {
         cancel: vi.fn(),
         isDiffingEnabled: false,
       });
-
       const { lastFrame, unmount } = await renderWithProviders(
         <ToolConfirmationMessage
           callId="test-call-id"
@@ -480,7 +479,6 @@ describe('ToolConfirmationMessage', () => {
         cancel: vi.fn(),
         isDiffingEnabled: false,
       });
-
       const { lastFrame, unmount } = await renderWithProviders(
         <ToolConfirmationMessage
           callId="test-call-id"
@@ -646,7 +644,6 @@ describe('ToolConfirmationMessage', () => {
         cancel: vi.fn(),
         isDiffingEnabled: false,
       });
-
       const confirmationDetails: SerializableConfirmationDetails = {
         type: 'info',
         title: 'Confirm Web Fetch',
