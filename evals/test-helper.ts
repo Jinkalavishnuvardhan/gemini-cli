@@ -37,126 +37,173 @@ export type EvalPolicy = 'ALWAYS_PASSES' | 'USUALLY_PASSES';
 
 export function evalTest(policy: EvalPolicy, evalCase: EvalCase) {
   const fn = async () => {
-    const rig = new TestRig();
-    const { logDir, sanitizedName } = await prepareLogDir(evalCase.name);
-    const activityLogFile = path.join(logDir, `${sanitizedName}.jsonl`);
-    const logFile = path.join(logDir, `${sanitizedName}.log`);
-    let isSuccess = false;
-    try {
-      rig.setup(evalCase.name, evalCase.params);
+    const maxRetries = 3;
+    let attempt = 0;
 
-      // Symlink node modules to reduce the amount of time needed to
-      // bootstrap test projects.
-      symlinkNodeModules(rig.testDir || '');
+    while (attempt <= maxRetries) {
+      const rig = new TestRig();
+      const { logDir, sanitizedName } = await prepareLogDir(evalCase.name);
+      const activityLogFile = path.join(logDir, `${sanitizedName}.jsonl`);
+      const logFile = path.join(logDir, `${sanitizedName}.log`);
+      let isSuccess = false;
 
-      if (evalCase.files) {
-        const acknowledgedAgents: Record<string, Record<string, string>> = {};
-        const projectRoot = fs.realpathSync(rig.testDir!);
+      try {
+        rig.setup(evalCase.name, evalCase.params);
 
-        for (const [filePath, content] of Object.entries(evalCase.files)) {
-          const fullPath = path.join(rig.testDir!, filePath);
-          fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-          fs.writeFileSync(fullPath, content);
+        // Symlink node modules to reduce the amount of time needed to
+        // bootstrap test projects.
+        symlinkNodeModules(rig.testDir || '');
 
-          // If it's an agent file, calculate hash for acknowledgement
-          if (
-            filePath.startsWith('.gemini/agents/') &&
-            filePath.endsWith('.md')
-          ) {
-            const hash = crypto
-              .createHash('sha256')
-              .update(content)
-              .digest('hex');
-
-            try {
-              const agentDefs = await parseAgentMarkdown(fullPath, content);
-              if (agentDefs.length > 0) {
-                const agentName = agentDefs[0].name;
-                if (!acknowledgedAgents[projectRoot]) {
-                  acknowledgedAgents[projectRoot] = {};
-                }
-                acknowledgedAgents[projectRoot][agentName] = hash;
-              }
-            } catch (error) {
-              console.warn(
-                `Failed to parse agent for test acknowledgement: ${filePath}`,
-                error,
-              );
-            }
-          }
+        if (evalCase.files) {
+          await setupTestFiles(rig, evalCase.files);
         }
 
-        // Write acknowledged_agents.json to the home directory
-        if (Object.keys(acknowledgedAgents).length > 0) {
-          const ackPath = path.join(
-            rig.homeDir!,
-            '.gemini',
-            'acknowledgments',
-            'agents.json',
-          );
-          fs.mkdirSync(path.dirname(ackPath), { recursive: true });
-          fs.writeFileSync(
-            ackPath,
-            JSON.stringify(acknowledgedAgents, null, 2),
-          );
-        }
-
-        const execOptions = { cwd: rig.testDir!, stdio: 'inherit' as const };
-        execSync('git init', execOptions);
-        execSync('git config user.email "test@example.com"', execOptions);
-        execSync('git config user.name "Test User"', execOptions);
-
-        // Temporarily disable the interactive editor and git pager
-        // to avoid hanging the tests. It seems the the agent isn't
-        // consistently honoring the instructions to avoid interactive
-        // commands.
-        execSync('git config core.editor "true"', execOptions);
-        execSync('git config core.pager "cat"', execOptions);
-        execSync('git config commit.gpgsign false', execOptions);
-        execSync('git add .', execOptions);
-        execSync('git commit --allow-empty -m "Initial commit"', execOptions);
-      }
-
-      const result = await rig.run({
-        args: evalCase.prompt,
-        approvalMode: evalCase.approvalMode ?? 'yolo',
-        timeout: evalCase.timeout,
-        env: {
-          GEMINI_CLI_ACTIVITY_LOG_TARGET: activityLogFile,
-        },
-      });
-
-      const unauthorizedErrorPrefix =
-        createUnauthorizedToolError('').split("'")[0];
-      if (result.includes(unauthorizedErrorPrefix)) {
-        throw new Error(
-          'Test failed due to unauthorized tool call in output: ' + result,
-        );
-      }
-
-      await evalCase.assert(rig, result);
-      isSuccess = true;
-    } finally {
-      if (isSuccess) {
-        await fs.promises.unlink(activityLogFile).catch((err) => {
-          if (err.code !== 'ENOENT') throw err;
+        const result = await rig.run({
+          args: evalCase.prompt,
+          approvalMode: evalCase.approvalMode ?? 'yolo',
+          timeout: evalCase.timeout,
+          env: {
+            GEMINI_CLI_ACTIVITY_LOG_TARGET: activityLogFile,
+          },
         });
-      }
 
-      if (rig._lastRunStderr) {
-        const stderrFile = path.join(logDir, `${sanitizedName}.stderr.log`);
-        await fs.promises.writeFile(stderrFile, rig._lastRunStderr);
-      }
+        const unauthorizedErrorPrefix =
+          createUnauthorizedToolError('').split("'")[0];
+        if (result.includes(unauthorizedErrorPrefix)) {
+          throw new Error(
+            'Test failed due to unauthorized tool call in output: ' + result,
+          );
+        }
 
-      await fs.promises.writeFile(
-        logFile,
-        JSON.stringify(rig.readToolLogs(), null, 2),
-      );
-      await rig.cleanup();
+        await evalCase.assert(rig, result);
+        isSuccess = true;
+        return; // Success! Exit the retry loop.
+      } catch (error: any) {
+        const isInternalError =
+          error.message?.includes('status: INTERNAL') ||
+          error.message?.includes('code: 500') ||
+          error.message?.includes('Internal error encountered');
+
+        if (isInternalError) {
+          const status = attempt < maxRetries ? 'RETRY' : 'SKIP';
+          const reliabilityLog = {
+            timestamp: new Date().toISOString(),
+            testName: evalCase.name,
+            model: process.env.GEMINI_MODEL || 'unknown',
+            attempt,
+            status,
+            error: error.message,
+          };
+
+          try {
+            const relDir = path.resolve(process.cwd(), 'evals/logs');
+            fs.mkdirSync(relDir, { recursive: true });
+            fs.appendFileSync(
+              path.join(relDir, 'api-reliability.jsonl'),
+              JSON.stringify(reliabilityLog) + '\n',
+            );
+          } catch (logError) {
+            console.error('Failed to write reliability log:', logError);
+          }
+
+          if (attempt < maxRetries) {
+            attempt++;
+            console.warn(
+              `[Eval] Attempt ${attempt} failed with 500 Internal Error. Retrying...`,
+            );
+            await rig.cleanup();
+            continue; // Retry
+          }
+
+          console.warn(
+            `[Eval] '${evalCase.name}' failed after ${maxRetries} retries due to persistent 500 API errors. Skipping failure to avoid blocking PR.`,
+          );
+          return; // Gracefully exit without failing the test
+        }
+
+        // It's a real failure (assertion, bug, etc.) - fail immediately
+        throw error;
+      } finally {
+        if (isSuccess) {
+          await fs.promises.unlink(activityLogFile).catch((err) => {
+            if (err.code !== 'ENOENT') throw err;
+          });
+        }
+
+        if (rig._lastRunStderr) {
+          const stderrFile = path.join(logDir, `${sanitizedName}.stderr.log`);
+          await fs.promises.writeFile(stderrFile, rig._lastRunStderr);
+        }
+
+        await fs.promises.writeFile(
+          logFile,
+          JSON.stringify(rig.readToolLogs(), null, 2),
+        );
+        await rig.cleanup();
+      }
     }
   };
 
   runEval(policy, evalCase.name, fn, evalCase.timeout);
+}
+
+/**
+ * Helper to setup test files and git repository.
+ */
+async function setupTestFiles(rig: TestRig, files: Record<string, string>) {
+  const acknowledgedAgents: Record<string, Record<string, string>> = {};
+  const projectRoot = fs.realpathSync(rig.testDir!);
+
+  for (const [filePath, content] of Object.entries(files)) {
+    const fullPath = path.join(rig.testDir!, filePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content);
+
+    if (filePath.startsWith('.gemini/agents/') && filePath.endsWith('.md')) {
+      const hash = crypto.createHash('sha256').update(content).digest('hex');
+      try {
+        const agentDefs = await parseAgentMarkdown(fullPath, content);
+        if (agentDefs.length > 0) {
+          const agentName = agentDefs[0].name;
+          if (!acknowledgedAgents[projectRoot]) {
+            acknowledgedAgents[projectRoot] = {};
+          }
+          acknowledgedAgents[projectRoot][agentName] = hash;
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to parse agent for test acknowledgement: ${filePath}`,
+          error,
+        );
+      }
+    }
+  }
+
+  if (Object.keys(acknowledgedAgents).length > 0) {
+    const ackPath = path.join(
+      rig.homeDir!,
+      '.gemini',
+      'acknowledgments',
+      'agents.json',
+    );
+    fs.mkdirSync(path.dirname(ackPath), { recursive: true });
+    fs.writeFileSync(ackPath, JSON.stringify(acknowledgedAgents, null, 2));
+  }
+
+  const execOptions = { cwd: rig.testDir!, stdio: 'inherit' as const };
+  execSync('git init', execOptions);
+  execSync('git config user.email "test@example.com"', execOptions);
+  execSync('git config user.name "Test User"', execOptions);
+
+  // Temporarily disable the interactive editor and git pager
+  // to avoid hanging the tests. It seems the the agent isn't
+  // consistently honoring the instructions to avoid interactive
+  // commands.
+  execSync('git config core.editor "true"', execOptions);
+  execSync('git config core.pager "cat"', execOptions);
+  execSync('git config commit.gpgsign false', execOptions);
+  execSync('git add .', execOptions);
+  execSync('git commit --allow-empty -m "Initial commit"', execOptions);
 }
 
 /**
