@@ -11,13 +11,9 @@ import {
 } from './CompressionMessage.js';
 import { CompressionStatus } from '@google/gemini-cli-core';
 import { type CompressionProps } from '../../types.js';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 describe('<CompressionMessage />', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   const createCompressionProps = (
     overrides: Partial<CompressionProps> = {},
   ): CompressionDisplayProps => ({
@@ -60,7 +56,7 @@ describe('<CompressionMessage />', () => {
       const output = lastFrame();
 
       expect(output).not.toContain('✦');
-      expect(output).toContain('Context compressed (22% → 6%).');
+      expect(output).toContain('Context compressed (22% ➔ 6%).');
       unmount();
     });
   });
