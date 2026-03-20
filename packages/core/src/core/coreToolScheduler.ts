@@ -445,7 +445,10 @@ export class CoreToolScheduler {
     signal: AbortSignal,
   ): Promise<void> {
     return runInDevTraceSpan(
-      { operation: GeminiCliOperation.ScheduleToolCalls },
+      {
+        operation: GeminiCliOperation.ScheduleToolCalls,
+        logPrompts: this.context.config.getTelemetryLogPromptsEnabled(),
+      },
       async ({ metadata: spanMetadata }) => {
         spanMetadata.input = request;
         if (this.isRunning() || this.isScheduling) {
