@@ -5,10 +5,9 @@
  */
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render } from '../test-utils/render.js';
+import { renderWithProviders } from '../test-utils/render.js';
 import { act } from 'react';
 import { IdeIntegrationNudge } from './IdeIntegrationNudge.js';
-import { KeypressProvider } from './contexts/KeypressContext.js';
 import { debugLogger } from '@google/gemini-cli-core';
 
 // Mock debugLogger
@@ -54,12 +53,9 @@ describe('IdeIntegrationNudge', () => {
   });
 
   it('renders correctly with default options', async () => {
-    const { lastFrame, waitUntilReady, unmount } = render(
-      <KeypressProvider>
-        <IdeIntegrationNudge {...defaultProps} />
-      </KeypressProvider>,
+    const { lastFrame, unmount } = await renderWithProviders(
+      <IdeIntegrationNudge {...defaultProps} />,
     );
-    await waitUntilReady();
     const frame = lastFrame();
 
     expect(frame).toContain('Do you want to connect VS Code to Gemini CLI?');
@@ -71,13 +67,9 @@ describe('IdeIntegrationNudge', () => {
 
   it('handles "Yes" selection', async () => {
     const onComplete = vi.fn();
-    const { stdin, waitUntilReady, unmount } = render(
-      <KeypressProvider>
-        <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />
-      </KeypressProvider>,
+    const { stdin, waitUntilReady, unmount } = await renderWithProviders(
+      <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />,
     );
-
-    await waitUntilReady();
 
     // "Yes" is the first option and selected by default usually.
     await act(async () => {
@@ -94,13 +86,9 @@ describe('IdeIntegrationNudge', () => {
 
   it('handles "No" selection', async () => {
     const onComplete = vi.fn();
-    const { stdin, waitUntilReady, unmount } = render(
-      <KeypressProvider>
-        <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />
-      </KeypressProvider>,
+    const { stdin, waitUntilReady, unmount } = await renderWithProviders(
+      <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />,
     );
-
-    await waitUntilReady();
 
     // Navigate down to "No (esc)"
     await act(async () => {
@@ -122,13 +110,9 @@ describe('IdeIntegrationNudge', () => {
 
   it('handles "Dismiss" selection', async () => {
     const onComplete = vi.fn();
-    const { stdin, waitUntilReady, unmount } = render(
-      <KeypressProvider>
-        <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />
-      </KeypressProvider>,
+    const { stdin, waitUntilReady, unmount } = await renderWithProviders(
+      <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />,
     );
-
-    await waitUntilReady();
 
     // Navigate down to "No, don't ask again"
     await act(async () => {
@@ -155,13 +139,9 @@ describe('IdeIntegrationNudge', () => {
 
   it('handles Escape key press', async () => {
     const onComplete = vi.fn();
-    const { stdin, waitUntilReady, unmount } = render(
-      <KeypressProvider>
-        <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />
-      </KeypressProvider>,
+    const { stdin, waitUntilReady, unmount } = await renderWithProviders(
+      <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />,
     );
-
-    await waitUntilReady();
 
     // Press Escape
     await act(async () => {
@@ -184,13 +164,10 @@ describe('IdeIntegrationNudge', () => {
     vi.stubEnv('GEMINI_CLI_IDE_WORKSPACE_PATH', '/tmp');
 
     const onComplete = vi.fn();
-    const { lastFrame, stdin, waitUntilReady, unmount } = render(
-      <KeypressProvider>
-        <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />
-      </KeypressProvider>,
-    );
-
-    await waitUntilReady();
+    const { lastFrame, stdin, waitUntilReady, unmount } =
+      await renderWithProviders(
+        <IdeIntegrationNudge {...defaultProps} onComplete={onComplete} />,
+      );
 
     const frame = lastFrame();
 

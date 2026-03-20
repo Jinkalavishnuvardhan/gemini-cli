@@ -117,6 +117,7 @@ export class GeminiClient {
     this.lastPromptId = this.config.getSessionId();
 
     coreEvents.on(CoreEvent.ModelChanged, this.handleModelChanged);
+    coreEvents.on(CoreEvent.MemoryChanged, this.handleMemoryChanged);
   }
 
   private get config(): Config {
@@ -125,6 +126,10 @@ export class GeminiClient {
 
   private handleModelChanged = () => {
     this.currentSequenceModel = null;
+  };
+
+  private handleMemoryChanged = () => {
+    this.updateSystemInstruction();
   };
 
   // Hook state to deduplicate BeforeAgent calls and track response for
@@ -299,10 +304,14 @@ export class GeminiClient {
   async resetChat(): Promise<void> {
     this.chat = await this.startChat();
     this.updateTelemetryTokenCount();
+    // Reset JIT context loaded paths so subdirectory context can be
+    // re-discovered in the new session.
+    await this.config.getContextManager()?.refresh();
   }
 
   dispose() {
     coreEvents.off(CoreEvent.ModelChanged, this.handleModelChanged);
+    coreEvents.off(CoreEvent.MemoryChanged, this.handleMemoryChanged);
   }
 
   async resumeChat(
@@ -341,7 +350,7 @@ export class GeminiClient {
       return;
     }
 
-    const systemMemory = this.config.getUserMemory();
+    const systemMemory = this.config.getSystemInstructionMemory();
     const systemInstruction = getCoreSystemPrompt(this.config, systemMemory);
     this.getChat().setSystemInstruction(systemInstruction);
   }
@@ -361,7 +370,7 @@ export class GeminiClient {
     const history = await getInitialChatHistory(this.config, extraHistory);
 
     try {
-      const systemMemory = this.config.getUserMemory();
+      const systemMemory = this.config.getSystemInstructionMemory();
       const systemInstruction = getCoreSystemPrompt(this.config, systemMemory);
       return new GeminiChat(
         this.config,
@@ -566,6 +575,9 @@ export class GeminiClient {
     return resolveModel(
       this.config.getActiveModel(),
       this.config.getGemini31LaunchedSync?.() ?? false,
+      false,
+      this.config.getHasAccessToPreviewModel?.() ?? true,
+      this.config,
     );
   }
 
@@ -891,7 +903,7 @@ export class GeminiClient {
     }
 
     const hooksEnabled = this.config.getEnableHooks();
-    const messageBus = this.config.getMessageBus();
+    const messageBus = this.context.messageBus;
 
     if (this.lastPromptId !== prompt_id) {
       this.loopDetector.reset(prompt_id, partListUnionToString(request));
@@ -1049,7 +1061,7 @@ export class GeminiClient {
     } = desiredModelConfig;
 
     try {
-      const userMemory = this.config.getUserMemory();
+      const userMemory = this.config.getSystemInstructionMemory();
       const systemInstruction = getCoreSystemPrompt(this.config, userMemory);
       const {
         model,

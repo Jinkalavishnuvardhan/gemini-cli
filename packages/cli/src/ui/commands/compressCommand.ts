@@ -16,17 +16,19 @@ export const compressCommand: SlashCommand = {
   autoExecute: true,
   action: async (context) => {
     const { ui, services } = context;
-    const config = services.config;
-    if (!config) {
+    const agentContext = services.agentContext;
+    if (!agentContext) {
       ui.addItem(
         {
           type: MessageType.ERROR,
-          text: 'Configuration service not found.',
+          text: 'Agent context not found.',
         },
         Date.now(),
       );
       return;
     }
+
+    const config = agentContext.config;
 
     if (ui.pendingItem) {
       ui.addItem(
@@ -53,7 +55,10 @@ export const compressCommand: SlashCommand = {
     try {
       ui.setPendingItem(pendingMessage);
       const promptId = `compress-${Date.now()}`;
-      const compressed = await config.getGeminiClient()?.tryCompressChat(promptId, true);
+      const compressed = await agentContext.geminiClient.tryCompressChat(
+        promptId,
+        true,
+      );
       if (compressed) {
         const limit = tokenLimit(config.getModel());
         const threshold = config.getContextWindowCompressionThreshold();
@@ -71,7 +76,8 @@ export const compressCommand: SlashCommand = {
               isPending: false,
               beforePercentage,
               afterPercentage,
-              compressionStatus: (Number(compressed.compressionStatus) as unknown) as CompressionStatus,
+              compressionStatus:
+                Number(compressed.compressionStatus) as unknown as CompressionStatus,
               isManual: true,
               thresholdPercentage: Math.round(threshold * 100),
             },

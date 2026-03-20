@@ -363,6 +363,7 @@ export class Scheduler {
         callId: request.callId,
         schedulerId: this.schedulerId,
         parentCallId: this.parentCallId,
+        subagent: this.subagent,
       },
       () => {
         try {
@@ -623,6 +624,7 @@ export class Scheduler {
         outcome,
         lastDetails,
         this.context,
+        this.messageBus,
         toolCall.invocation,
       );
     }
@@ -669,6 +671,7 @@ export class Scheduler {
         callId: activeCall.request.callId,
         schedulerId: this.schedulerId,
         parentCallId: this.parentCallId,
+        subagent: this.subagent,
       },
       () =>
         this.executor.execute({

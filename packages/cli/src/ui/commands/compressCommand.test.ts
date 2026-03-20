@@ -27,13 +27,14 @@ describe('compressCommand', () => {
     vi.mocked(Core.tokenLimit).mockReturnValue(1000);
     context = createMockCommandContext({
       services: {
-        config: {
-          getModel: () => 'test-model',
-          getContextWindowCompressionThreshold: () => 0.2,
-          getGeminiClient: () =>
-            ({
-              tryCompressChat: mockTryCompressChat,
-            }) as unknown as Core.GeminiClient,
+        agentContext: {
+          config: {
+            getModel: () => 'test-model',
+            getContextWindowCompressionThreshold: () => 0.2,
+          },
+          geminiClient: {
+            tryCompressChat: mockTryCompressChat,
+          } as unknown as Core.GeminiClient,
         },
       },
     });

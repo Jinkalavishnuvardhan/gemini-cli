@@ -546,7 +546,6 @@ export class ClearcutLogger {
     let result: LogResponse = {};
 
     try {
-      // eslint-disable-next-line no-restricted-syntax -- TODO: Migrate to safeFetch for SSRF protection
       const response = await fetch(CLEARCUT_URL, {
         method: 'POST',
         body: safeJsonStringify(request),
@@ -687,6 +686,11 @@ export class ClearcutLogger {
       {
         gemini_cli_key: EventMetadataKey.GEMINI_CLI_START_SESSION_EXTENSION_IDS,
         value: event.extension_ids.toString(),
+      },
+      {
+        gemini_cli_key:
+          EventMetadataKey.GEMINI_CLI_START_SESSION_WORKTREE_ACTIVE,
+        value: event.worktree_active.toString(),
       },
     ];
 

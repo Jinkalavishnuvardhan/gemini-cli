@@ -11,9 +11,13 @@ import {
 } from './CompressionMessage.js';
 import { CompressionStatus } from '@google/gemini-cli-core';
 import { type CompressionProps } from '../../types.js';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 describe('<CompressionMessage />', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const createCompressionProps = (
     overrides: Partial<CompressionProps> = {},
   ): CompressionDisplayProps => ({
@@ -50,10 +54,9 @@ describe('<CompressionMessage />', () => {
         compressionStatus: CompressionStatus.COMPRESSED,
         thresholdPercentage: 50,
       });
-      const { lastFrame, waitUntilReady, unmount } = renderWithProviders(
+      const { lastFrame, unmount } = await renderWithProviders(
         <CompressionMessage {...props} />,
       );
-      await waitUntilReady();
       const output = lastFrame();
 
       expect(output).not.toContain('✦');
@@ -71,10 +74,9 @@ describe('<CompressionMessage />', () => {
         compressionStatus:
           CompressionStatus.COMPRESSION_FAILED_INFLATED_TOKEN_COUNT,
       });
-      const { lastFrame, waitUntilReady, unmount } = renderWithProviders(
+      const { lastFrame, unmount } = await renderWithProviders(
         <CompressionMessage {...props} />,
       );
-      await waitUntilReady();
       const output = lastFrame();
 
       expect(output).not.toContain('✦');
@@ -91,10 +93,9 @@ describe('<CompressionMessage />', () => {
         isPending: false,
         compressionStatus: CompressionStatus.COMPRESSION_FAILED_EMPTY_SUMMARY,
       });
-      const { lastFrame, waitUntilReady, unmount } = renderWithProviders(
+      const { lastFrame, unmount } = await renderWithProviders(
         <CompressionMessage {...props} />,
       );
-      await waitUntilReady();
       const output = lastFrame();
 
       expect(output).not.toContain('✦');
@@ -110,10 +111,9 @@ describe('<CompressionMessage />', () => {
         compressionStatus:
           CompressionStatus.COMPRESSION_FAILED_TOKEN_COUNT_ERROR,
       });
-      const { lastFrame, waitUntilReady, unmount } = renderWithProviders(
+      const { lastFrame, unmount } = await renderWithProviders(
         <CompressionMessage {...props} />,
       );
-      await waitUntilReady();
       const output = lastFrame();
 
       expect(output).toContain(

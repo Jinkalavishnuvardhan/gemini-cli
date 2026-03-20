@@ -77,7 +77,7 @@ const renderStatusDisplay = async (
   }),
   config = createMockConfig(),
 ) => {
-  const result = render(
+  const result = await render(
     <ConfigContext.Provider value={config as unknown as Config}>
       <SettingsContext.Provider value={settings as unknown as LoadedSettings}>
         <UIStateContext.Provider value={uiState}>
@@ -86,7 +86,6 @@ const renderStatusDisplay = async (
       </SettingsContext.Provider>
     </ConfigContext.Provider>,
   );
-  await result.waitUntilReady();
   return result;
 };
 
