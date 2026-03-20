@@ -138,7 +138,6 @@ const mockRunInDevTraceSpan = vi.hoisted(() =>
     };
     return await fn({
       metadata,
-      endSpan: vi.fn(),
     });
   }),
 );
@@ -876,7 +875,7 @@ describe('useGeminiStream', () => {
     const fn = spanArgs[1];
     const metadata = { attributes: {} };
     await act(async () => {
-      await fn({ metadata, endSpan: vi.fn() });
+      await fn({ metadata });
     });
     expect(metadata).toMatchObject({
       input: sentParts,
@@ -3902,7 +3901,7 @@ describe('useGeminiStream', () => {
 
     const spanMetadata = {} as SpanMetadata;
     await act(async () => {
-      await userPromptCall![1]({ metadata: spanMetadata, endSpan: vi.fn() });
+      await userPromptCall![1]({ metadata: spanMetadata });
     });
     expect(spanMetadata.input).toBe('telemetry test query');
   });

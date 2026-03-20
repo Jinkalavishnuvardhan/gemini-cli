@@ -25,7 +25,6 @@ const runInDevTraceSpan = vi.hoisted(() =>
     const metadata = { attributes: opts.attributes || {} };
     return fn({
       metadata,
-      endSpan: vi.fn(),
     });
   }),
 );
@@ -420,7 +419,7 @@ describe('Scheduler (Orchestrator)', () => {
       const spanArgs = vi.mocked(runInDevTraceSpan).mock.calls[0];
       const fn = spanArgs[1];
       const metadata = { attributes: {} };
-      await fn({ metadata, endSpan: vi.fn() });
+      await fn({ metadata });
       expect(metadata).toMatchObject({
         input: [req1],
       });
