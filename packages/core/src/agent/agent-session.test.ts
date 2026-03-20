@@ -34,7 +34,7 @@ describe('AgentSession', () => {
       session.events.some(
         (e) =>
           e.type === 'agent_end' &&
-          (e as AgentEvent<'agent_end'>).reason === 'aborted',
+          (e).reason === 'aborted',
       ),
     ).toBe(true);
   });
@@ -171,6 +171,67 @@ describe('AgentSession', () => {
       }
 
       expect(streamedEvents).toEqual(allEvents.slice(2));
+    });
+
+    it('should resume from an in-stream event within the same stream only', async () => {
+      const protocol = new MockAgentProtocol();
+      const session = new AgentSession(protocol);
+
+      protocol.pushResponse([
+        {
+          type: 'message',
+          role: 'agent',
+          content: [{ type: 'text', text: 'first answer 1' }],
+        },
+        {
+          type: 'message',
+          role: 'agent',
+          content: [{ type: 'text', text: 'first answer 2' }],
+        },
+      ]);
+      const { streamId: streamId1 } = await session.send({
+        message: [{ type: 'text', text: 'first request' }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      protocol.pushResponse([
+        {
+          type: 'message',
+          role: 'agent',
+          content: [{ type: 'text', text: 'second answer' }],
+        },
+      ]);
+      await session.send({
+        message: [{ type: 'text', text: 'second request' }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const resumeEvent = session.events.find(
+        (event): event is AgentEvent<'message'> =>
+          event.type === 'message' &&
+          event.streamId === streamId1 &&
+          event.role === 'agent' &&
+          event.content[0]?.type === 'text' &&
+          event.content[0].text === 'first answer 1',
+      );
+      expect(resumeEvent).toBeDefined();
+
+      const streamedEvents: AgentEvent[] = [];
+      for await (const event of session.stream({ eventId: resumeEvent!.id })) {
+        streamedEvents.push(event);
+      }
+
+      expect(
+        streamedEvents.every((event) => event.streamId === streamId1),
+      ).toBe(true);
+      expect(streamedEvents.map((event) => event.type)).toEqual([
+        'message',
+        'agent_end',
+      ]);
+      const resumedMessage = streamedEvents[0] as AgentEvent<'message'>;
+      expect(resumedMessage.content).toEqual([
+        { type: 'text', text: 'first answer 2' },
+      ]);
     });
 
     it('should replay events for streamId starting with agent_start', async () => {

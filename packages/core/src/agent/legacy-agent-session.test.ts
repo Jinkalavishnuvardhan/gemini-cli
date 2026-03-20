@@ -101,18 +101,18 @@ async function collectEvents(
   options?: { streamId?: string; eventId?: string },
 ): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
-  const streamOptions: { streamId?: string; eventId?: string } = options
-    ?.eventId
-    ? {
-        eventId: options.eventId,
-        ...(options.streamId ? { streamId: options.streamId } : {}),
-      }
-    : {
-        streamId:
-          options?.streamId ??
-          session.events.findLast((event) => event.type === 'agent_start')
-            ?.streamId,
-      };
+  const streamOptions: { streamId?: string; eventId?: string } =
+    options?.eventId
+      ? {
+          eventId: options.eventId,
+          ...(options.streamId ? { streamId: options.streamId } : {}),
+        }
+      : {
+          streamId:
+            options?.streamId ??
+            session.events.findLast((event) => event.type === 'agent_start')
+              ?.streamId,
+        };
 
   if (!streamOptions.eventId && !streamOptions.streamId) {
     return events;
@@ -159,7 +159,7 @@ describe('LegacyAgentSession', () => {
       expect(result.streamId).toBe('test-stream');
     });
 
-    it('records the sent user message in the trajectory', async () => {
+    it('records the sent user message in the trajectory before send resolves', async () => {
       const sendMock = deps.client.sendMessageStream as ReturnType<
         typeof vi.fn
       >;
@@ -177,16 +177,15 @@ describe('LegacyAgentSession', () => {
         message: [{ type: 'text', text: 'hi' }],
         _meta: { source: 'user-test' },
       });
-      await collectEvents(session, { streamId: streamId ?? undefined });
 
       const userMessage = session.events.find(
         (e): e is AgentEvent<'message'> =>
-          e.type === 'message' &&
-          e.role === 'user' &&
-          e.streamId === streamId,
+          e.type === 'message' && e.role === 'user' && e.streamId === streamId,
       );
       expect(userMessage?.content).toEqual([{ type: 'text', text: 'hi' }]);
       expect(userMessage?._meta).toEqual({ source: 'user-test' });
+
+      await collectEvents(session, { streamId: streamId ?? undefined });
     });
 
     it('throws for non-message payloads', async () => {
@@ -494,6 +493,63 @@ describe('LegacyAgentSession', () => {
       // Should NOT make a second call
       expect(sendMock).toHaveBeenCalledTimes(1);
     });
+
+    it('treats fatal tool errors as tool_response followed by agent_end failed', async () => {
+      const sendMock = deps.client.sendMessageStream as ReturnType<
+        typeof vi.fn
+      >;
+      sendMock.mockReturnValueOnce(
+        makeStream([
+          {
+            type: GeminiEventType.ToolCallRequest,
+            value: makeToolRequest('call-1', 'write_file'),
+          },
+          {
+            type: GeminiEventType.Finished,
+            value: { reason: FinishReason.STOP, usageMetadata: undefined },
+          },
+        ]),
+      );
+
+      const fatalToolCall: CompletedToolCall = {
+        status: CoreToolCallStatus.Error,
+        request: makeToolRequest('call-1', 'write_file'),
+        response: {
+          callId: 'call-1',
+          responseParts: [],
+          resultDisplay: undefined,
+          error: new Error('Disk full'),
+          errorType: ToolErrorType.NO_SPACE_LEFT,
+        },
+      } as CompletedToolCall;
+
+      const scheduleMock = deps.scheduler.schedule as ReturnType<typeof vi.fn>;
+      scheduleMock.mockResolvedValueOnce([fatalToolCall]);
+
+      const session = new LegacyAgentSession(deps);
+      await session.send({
+        message: [{ type: 'text', text: 'write file' }],
+      });
+      const events = await collectEvents(session);
+
+      const toolResp = events.find(
+        (e): e is AgentEvent<'tool_response'> => e.type === 'tool_response',
+      );
+      expect(toolResp?.isError).toBe(true);
+      expect(toolResp?.content).toEqual([{ type: 'text', text: 'Disk full' }]);
+      expect(
+        events.some(
+          (e): e is AgentEvent<'error'> =>
+            e.type === 'error' && e.fatal === true,
+        ),
+      ).toBe(false);
+
+      const streamEnd = events.findLast(
+        (e): e is AgentEvent<'agent_end'> => e.type === 'agent_end',
+      );
+      expect(streamEnd?.reason).toBe('failed');
+      expect(sendMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('stream - terminal events', () => {
@@ -677,9 +733,7 @@ describe('LegacyAgentSession', () => {
         typeof vi.fn
       >;
       sendMock.mockReturnValue(
-        makeStream([
-          { type: GeminiEventType.MaxSessionTurns },
-        ]),
+        makeStream([{ type: GeminiEventType.MaxSessionTurns }]),
       );
 
       const session = new LegacyAgentSession(deps);
@@ -847,9 +901,7 @@ describe('LegacyAgentSession', () => {
       expect(liveEvents.length).toBeGreaterThan(0);
       expect(
         liveEvents.every((event) => event.streamId === second.streamId),
-      ).toBe(
-        true,
-      );
+      ).toBe(true);
       expect(
         liveEvents.some(
           (event) =>
@@ -958,29 +1010,23 @@ describe('LegacyAgentSession', () => {
       });
       await collectEvents(session);
 
-      const firstUserMessage = session.events.find(
+      const firstAgentMessage = session.events.find(
         (e): e is AgentEvent<'message'> =>
           e.type === 'message' &&
-          e.role === 'user' &&
-          e.streamId === first.streamId,
+          e.role === 'agent' &&
+          e.streamId === first.streamId &&
+          e.content[0]?.type === 'text' &&
+          e.content[0].text === 'first answer',
       );
-      expect(firstUserMessage).toBeDefined();
+      expect(firstAgentMessage).toBeDefined();
 
       const resumedEvents = await collectEvents(session, {
-        eventId: firstUserMessage?.id,
+        eventId: firstAgentMessage?.id,
       });
-      expect(resumedEvents.every((event) => event.streamId === first.streamId)).toBe(
-        true,
-      );
       expect(
-        resumedEvents.some(
-          (e) =>
-            e.type === 'message' &&
-            e.role === 'agent' &&
-            e.content[0]?.type === 'text' &&
-            e.content[0].text === 'first answer',
-        ),
+        resumedEvents.every((event) => event.streamId === first.streamId),
       ).toBe(true);
+      expect(resumedEvents.map((event) => event.type)).toEqual(['agent_end']);
       expect(
         resumedEvents.some(
           (e) =>
@@ -991,7 +1037,6 @@ describe('LegacyAgentSession', () => {
         ),
       ).toBe(false);
     });
-
   });
 
   describe('agent_end ordering', () => {

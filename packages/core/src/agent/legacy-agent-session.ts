@@ -10,6 +10,7 @@
  */
 
 import { GeminiEventType } from '../core/turn.js';
+import type { Part } from '@google/genai';
 import type { GeminiClient } from '../core/client.js';
 import type { Config } from '../config/config.js';
 import type { ToolCallRequestInfo } from '../scheduler/types.js';
@@ -46,8 +47,6 @@ export interface LegacySessionDeps {
   promptId: string;
   streamId?: string;
 }
-
-type Part = import('@google/genai').Part;
 
 class LegacyAgentProtocol implements AgentProtocol {
   private _events: AgentEvent[] = [];
@@ -86,7 +85,9 @@ class LegacyAgentProtocol implements AgentProtocol {
   async send(payload: AgentSend): Promise<{ streamId: string }> {
     const message = 'message' in payload ? payload.message : undefined;
     if (!message) {
-      throw new Error('LegacyAgentSession.send() only supports message sends.');
+      throw new Error(
+        'LegacyAgentSession.send() only supports message sends for the moment.',
+      );
     }
 
     if (this._activeStreamId) {
@@ -107,8 +108,9 @@ class LegacyAgentProtocol implements AgentProtocol {
       ...(payload._meta ? { _meta: payload._meta } : {}),
     });
 
+    this._emit([userMessage]);
+
     void Promise.resolve().then(async () => {
-      this._emit([userMessage]);
       this._ensureAgentStart();
       try {
         await this._runLoop(parts);
@@ -268,14 +270,6 @@ class LegacyAgentProtocol implements AgentProtocol {
         isFatalToolError(tc.response.errorType),
       );
       if (fatalTool) {
-        const msg = fatalTool.response.error?.message ?? 'Fatal tool error';
-        this._emit([
-          this._makeInternalEvent('error', {
-            status: 'INTERNAL',
-            message: `Fatal tool error (${fatalTool.request.name}): ${msg}`,
-            fatal: true,
-          }),
-        ]);
         this._ensureAgentEnd('failed');
         this._markStreamDone();
         return;
@@ -366,10 +360,13 @@ class LegacyAgentProtocol implements AgentProtocol {
     this._ensureAgentEnd('failed');
   }
 
-  private _makeInternalEvent(
-    type: AgentEvent['type'],
-    payload: Partial<AgentEvent>,
-  ): AgentEvent {
+  private _makeInternalEvent<T extends AgentEvent['type']>(
+    type: T,
+    payload: Omit<
+      Partial<AgentEvent<T>>,
+      'id' | 'timestamp' | 'streamId' | 'type'
+    >,
+  ): AgentEvent<T> {
     const id = `${this._translationState.streamId}-${this._translationState.eventCounter++}`;
     return {
       ...payload,
@@ -377,7 +374,7 @@ class LegacyAgentProtocol implements AgentProtocol {
       timestamp: new Date().toISOString(),
       streamId: this._translationState.streamId,
       type,
-    } as AgentEvent;
+    };
   }
 }
 
