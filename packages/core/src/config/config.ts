@@ -1903,6 +1903,10 @@ export class Config implements McpContext, AgentLoopContext {
     return this.showContextCompression;
   }
 
+  getContextWindowCompressionThreshold(): number {
+    return this.compressionThreshold ?? 0.5;
+  }
+
   getMcpEnablementCallbacks(): McpEnablementCallbacks | undefined {
     return this.mcpEnablementCallbacks;
   }

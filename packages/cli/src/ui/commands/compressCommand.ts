@@ -17,6 +17,17 @@ export const compressCommand: SlashCommand = {
   action: async (context) => {
     const { ui, services } = context;
     const config = services.config;
+    if (!config) {
+      ui.addItem(
+        {
+          type: MessageType.ERROR,
+          text: 'Configuration service not found.',
+        },
+        Date.now(),
+      );
+      return;
+    }
+
     if (ui.pendingItem) {
       ui.addItem(
         {
@@ -42,9 +53,7 @@ export const compressCommand: SlashCommand = {
     try {
       ui.setPendingItem(pendingMessage);
       const promptId = `compress-${Date.now()}`;
-      const compressed = await config
-        ?.getGeminiClient()
-        ?.tryCompressChat(promptId, true);
+      const compressed = await config.getGeminiClient()?.tryCompressChat(promptId, true);
       if (compressed) {
         const limit = tokenLimit(config.getModel());
         const threshold = config.getContextWindowCompressionThreshold();
