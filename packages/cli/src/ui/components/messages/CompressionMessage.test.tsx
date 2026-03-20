@@ -34,7 +34,7 @@ describe('<CompressionMessage />', () => {
   describe('pending state', () => {
     it('renders pending message when compression is in progress', async () => {
       const props = createCompressionProps({ isPending: true });
-      const { lastFrame, waitUntilReady, unmount } = renderWithProviders(
+      const { lastFrame, waitUntilReady, unmount } = await renderWithProviders(
         <CompressionMessage {...props} />,
       );
       await waitUntilReady();
