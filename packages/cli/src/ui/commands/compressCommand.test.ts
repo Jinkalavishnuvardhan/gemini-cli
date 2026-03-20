@@ -97,6 +97,7 @@ describe('compressCommand', () => {
           beforePercentage: 20,
           afterPercentage: 10,
           isManual: true,
+          thresholdPercentage: 20,
         },
       },
       expect.any(Number),

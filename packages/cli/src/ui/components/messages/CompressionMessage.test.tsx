@@ -48,6 +48,7 @@ describe('<CompressionMessage />', () => {
         beforePercentage: 22,
         afterPercentage: 6,
         compressionStatus: CompressionStatus.COMPRESSED,
+        thresholdPercentage: 50,
       });
       const { lastFrame, waitUntilReady, unmount } = renderWithProviders(
         <CompressionMessage {...props} />,
@@ -56,7 +57,9 @@ describe('<CompressionMessage />', () => {
       const output = lastFrame();
 
       expect(output).not.toContain('✦');
-      expect(output).toContain('Context compressed (22% ➔ 6%).');
+      expect(output).toContain(
+        'Context compressed (22% → 6%). Adjust threshold (50%) in /settings.',
+      );
       unmount();
     });
   });

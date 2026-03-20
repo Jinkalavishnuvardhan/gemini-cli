@@ -6,7 +6,7 @@
 
 import { MessageType, type HistoryItemCompression } from '../types.js';
 import { CommandKind, type SlashCommand } from './types.js';
-import { tokenLimit } from '@google/gemini-cli-core';
+import { tokenLimit, CompressionStatus } from '@google/gemini-cli-core';
 
 export const compressCommand: SlashCommand = {
   name: 'compress',
@@ -47,6 +47,7 @@ export const compressCommand: SlashCommand = {
         ?.tryCompressChat(promptId, true);
       if (compressed) {
         const limit = tokenLimit(config.getModel());
+        const threshold = config.getContextWindowCompressionThreshold();
         const beforePercentage = Math.round(
           (compressed.originalTokenCount / limit) * 100,
         );
@@ -61,8 +62,9 @@ export const compressCommand: SlashCommand = {
               isPending: false,
               beforePercentage,
               afterPercentage,
-              compressionStatus: compressed.compressionStatus,
+              compressionStatus: (Number(compressed.compressionStatus) as unknown) as CompressionStatus,
               isManual: true,
+              thresholdPercentage: Math.round(threshold * 100),
             },
           } as HistoryItemCompression,
           Date.now(),

@@ -38,6 +38,7 @@ import {
   GeminiCliOperation,
   getPlanModeExitMessage,
   isBackgroundExecutionData,
+  CompressionStatus,
 } from '@google/gemini-cli-core';
 import type {
   Config,
@@ -1117,7 +1118,12 @@ export const useGeminiStream = (
           ? Math.round((eventValue.newTokenCount / limit) * 100)
           : null;
 
-      if (!config.getShowContextCompression()) {
+      const threshold = config.getContextWindowCompressionThreshold();
+      const isLargePrompt =
+        eventValue?.requestTokenCount != null &&
+        eventValue.requestTokenCount / limit > threshold;
+
+      if (!config.getShowContextCompression() && !isLargePrompt) {
         return;
       }
 
@@ -1128,8 +1134,9 @@ export const useGeminiStream = (
             isPending: false,
             beforePercentage,
             afterPercentage,
-            compressionStatus: eventValue?.compressionStatus ?? null,
+            compressionStatus: eventValue ? ((Number(eventValue.compressionStatus) as unknown) as CompressionStatus) : null,
             isManual: false,
+            thresholdPercentage: Math.round(threshold * 100),
           },
           timestamp: new Date(userMessageTimestamp),
         } as HistoryItemWithoutId,
