@@ -84,6 +84,15 @@ toolAnnotations = { readOnlyHint = true }
 decision = "ask_user"
 priority = 70
 modes = ["plan"]
+interactive = true
+
+[[rule]]
+mcpName = "*"
+toolAnnotations = { readOnlyHint = true }
+decision = "deny"
+priority = 70
+modes = ["plan"]
+interactive = false
 
 [[rule]]
 toolName = [
@@ -106,6 +115,14 @@ toolName = ["ask_user", "save_memory"]
 decision = "ask_user"
 priority = 70
 modes = ["plan"]
+interactive = true
+
+[[rule]]
+toolName = ["ask_user", "save_memory"]
+decision = "deny"
+priority = 70
+modes = ["plan"]
+interactive = false
 
 # Allow write_file and replace for .md files in the plans directory (cross-platform)
 [[rule]]

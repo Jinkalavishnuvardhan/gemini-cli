@@ -47,7 +47,6 @@ export function getPolicyDenialError(
 /**
  * Queries the system PolicyEngine to determine tool allowance.
  * @returns The PolicyDecision.
- * @throws Error if policy requires ASK_USER but the CLI is non-interactive.
  */
 export async function checkPolicy(
   toolCall: ValidatingToolCall,
