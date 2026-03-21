@@ -38,7 +38,7 @@ import {
   GeminiCliOperation,
   getPlanModeExitMessage,
   isBackgroundExecutionData,
-  CompressionStatus,
+  type CompressionStatus,
   Kind,
 } from '@google/gemini-cli-core';
 import type {
@@ -1171,6 +1171,7 @@ export const useGeminiStream = (
             isPending: false,
             beforePercentage,
             afterPercentage,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
             compressionStatus: eventValue ? ((Number(eventValue.compressionStatus) as unknown) as CompressionStatus) : null,
             isManual: false,
             thresholdPercentage: Math.round(threshold * 100),
