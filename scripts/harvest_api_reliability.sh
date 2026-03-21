@@ -26,10 +26,10 @@ RUN_IDS=$(gh run list --workflow "$WORKFLOW" --limit "$LIMIT" --json databaseId 
 
 for ID in $RUN_IDS; do
     echo "📥 Downloading logs from run $ID..."
-    gh run download "$ID" -p "eval-logs-*" -D "$DEST_DIR/$ID" --skip-extract 2>/dev/null
+    gh run download "$ID" -p "eval-logs-*" -D "$DEST_DIR/$ID" --skip-extract
     
     # Extract only the reliability file to save space
-    find "$DEST_DIR/$ID" -name "*.zip" -exec unzip -q -o {} "api-reliability.jsonl" -d "$DEST_DIR/$ID" \; 2>/dev/null
+    find "$DEST_DIR/$ID" -name "*.zip" -exec unzip -q -o {} "api-reliability.jsonl" -d "$DEST_DIR/$ID" \;
     
     # Append to master log
     find "$DEST_DIR/$ID" -name "api-reliability.jsonl" -exec cat {} + >> "$MERGED_FILE"
