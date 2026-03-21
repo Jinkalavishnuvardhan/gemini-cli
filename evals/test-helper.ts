@@ -203,7 +203,7 @@ async function setupTestFiles(rig: TestRig, files: Record<string, string>) {
   }
 
   const execOptions = { cwd: rig.testDir!, stdio: 'inherit' as const };
-  execSync('git init', execOptions);
+  execSync('git init --initial-branch=main', execOptions);
   execSync('git config user.email "test@example.com"', execOptions);
   execSync('git config user.name "Test User"', execOptions);
 
