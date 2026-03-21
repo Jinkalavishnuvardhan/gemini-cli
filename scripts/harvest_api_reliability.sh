@@ -20,7 +20,7 @@
 #   - unzip installed
 
 # Arguments & Defaults
-SINCE=${1:-"7d"}
+SINCE=${1:-"7 days"}
 LIMIT=${2:-300}
 WORKFLOWS=("Testing: E2E (Chained)" "Evals: Nightly")
 DEST_DIR="/tmp/gemini-reliability-harvest"
