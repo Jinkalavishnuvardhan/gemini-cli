@@ -22,7 +22,7 @@
 # Arguments & Defaults
 SINCE=${1:-"7d"}
 LIMIT=${2:-300}
-WORKFLOW="eval.yml"
+WORKFLOWS=("Testing: E2E (Chained)" "Evals: Nightly")
 DEST_DIR="/tmp/gemini-reliability-harvest"
 MERGED_FILE="api-reliability-summary.jsonl"
 
@@ -39,31 +39,33 @@ fi
 mkdir -p "$DEST_DIR"
 rm -f "$MERGED_FILE"
 
-echo "🔍 Fetching runs for $WORKFLOW created since $SINCE (max $LIMIT runs)..."
-
 # gh run list --created supports ">7d" or date ranges
 CREATED_QUERY=">$SINCE"
 if [[ $SINCE =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     CREATED_QUERY=">=$SINCE"
 fi
 
-RUN_IDS=$(gh run list --workflow "$WORKFLOW" --created "$CREATED_QUERY" --limit "$LIMIT" --json databaseId --jq '.[].databaseId')
+for WORKFLOW in "${WORKFLOWS[@]}"; do
+    echo "🔍 Fetching runs for '$WORKFLOW' created since $SINCE (max $LIMIT runs)..."
 
-if [ -z "$RUN_IDS" ]; then
-    echo "📭 No runs found for workflow $WORKFLOW since $SINCE."
-    exit 0
-fi
+    RUN_IDS=$(gh run list --workflow "$WORKFLOW" --created "$CREATED_QUERY" --limit "$LIMIT" --json databaseId --jq '.[].databaseId')
 
-for ID in $RUN_IDS; do
-    echo "📥 Downloading logs from run $ID..."
-    # Download artifacts named 'eval-logs-*'
-    gh run download "$ID" -p "eval-logs-*" -D "$DEST_DIR/$ID" --skip-extract 2>/dev/null || continue
-    
-    # Extract only the reliability file to save space
-    find "$DEST_DIR/$ID" -name "*.zip" -exec unzip -q -o {} "api-reliability.jsonl" -d "$DEST_DIR/$ID" \; 2>/dev/null
-    
-    # Append to master log
-    find "$DEST_DIR/$ID" -name "api-reliability.jsonl" -exec cat {} + >> "$MERGED_FILE"
+    if [ -z "$RUN_IDS" ]; then
+        echo "📭 No runs found for workflow '$WORKFLOW' since $SINCE."
+        continue
+    fi
+
+    for ID in $RUN_IDS; do
+        echo "📥 Downloading logs from run $ID..."
+        # Download artifacts named 'eval-logs-*'
+        gh run download "$ID" -p "eval-logs-*" -D "$DEST_DIR/$ID" --skip-extract 2>/dev/null || continue
+        
+        # Extract only the reliability file to save space
+        find "$DEST_DIR/$ID" -name "*.zip" -exec unzip -q -o {} "api-reliability.jsonl" -d "$DEST_DIR/$ID" \; 2>/dev/null
+        
+        # Append to master log
+        find "$DEST_DIR/$ID" -name "api-reliability.jsonl" -exec cat {} + >> "$MERGED_FILE"
+    done
 done
 
 if [ ! -f "$MERGED_FILE" ]; then
