@@ -40,20 +40,18 @@ import {
   isBackgroundExecutionData,
   type CompressionStatus,
   Kind,
-} from '@google/gemini-cli-core';
-import type {
-  Config,
-  EditorType,
-  GeminiClient,
-  ServerGeminiChatCompressedEvent,
-  ServerGeminiContentEvent as ContentEvent,
-  ServerGeminiFinishedEvent,
-  ServerGeminiStreamEvent as GeminiEvent,
-  ThoughtSummary,
-  ToolCallRequestInfo,
-  ToolCallResponseInfo,
-  GeminiErrorEventValue,
-  RetryAttemptPayload,
+  type Config,
+  type EditorType,
+  type GeminiClient,
+  type ServerGeminiChatCompressedEvent,
+  type ServerGeminiContentEvent as ContentEvent,
+  type ServerGeminiFinishedEvent,
+  type ServerGeminiStreamEvent as GeminiEvent,
+  type ThoughtSummary,
+  type ToolCallRequestInfo,
+  type ToolCallResponseInfo,
+  type GeminiErrorEventValue,
+  type RetryAttemptPayload,
 } from '@google/gemini-cli-core';
 import { type Part, type PartListUnion, FinishReason } from '@google/genai';
 import type {
