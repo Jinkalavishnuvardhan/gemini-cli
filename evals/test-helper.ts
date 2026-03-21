@@ -160,7 +160,14 @@ async function setupTestFiles(rig: TestRig, files: Record<string, string>) {
   const projectRoot = fs.realpathSync(rig.testDir!);
 
   for (const [filePath, content] of Object.entries(files)) {
-    const fullPath = path.join(rig.testDir!, filePath);
+    if (filePath.includes('..') || path.isAbsolute(filePath)) {
+      throw new Error(`Invalid file path in test case: ${filePath}`);
+    }
+    const fullPath = path.join(projectRoot, filePath);
+    if (!fullPath.startsWith(projectRoot)) {
+      throw new Error(`Path traversal detected: ${filePath}`);
+    }
+
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
     fs.writeFileSync(fullPath, content);
 

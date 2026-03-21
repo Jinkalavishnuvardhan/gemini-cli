@@ -124,4 +124,32 @@ describe('evalTest reliability logic', () => {
     expect(logContent.length).toBe(1);
     expect(JSON.parse(logContent[0]).status).toBe('RETRY');
   });
+
+  it('should throw if directory traversal is detected in files', async () => {
+    const mockRig = new TestRig() as any;
+    (TestRig as any).mockReturnValue(mockRig);
+    mockRig.testDir = path.resolve(process.cwd(), 'test-dir-tmp');
+
+    // Create a mock test-dir
+    if (!fs.existsSync(mockRig.testDir)) {
+      fs.mkdirSync(mockRig.testDir, { recursive: true });
+    }
+
+    try {
+      await expect(
+        internalEvalTest({
+          name: 'test-traversal',
+          prompt: 'do something',
+          files: {
+            '../sensitive.txt': 'hacked',
+          },
+          assert: async () => {},
+        }),
+      ).rejects.toThrow('Invalid file path in test case: ../sensitive.txt');
+    } finally {
+      if (fs.existsSync(mockRig.testDir)) {
+        fs.rmSync(mockRig.testDir, { recursive: true, force: true });
+      }
+    }
+  });
 });
