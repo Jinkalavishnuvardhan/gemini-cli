@@ -244,7 +244,12 @@ their corresponding top-level category object in your `settings.json` file.
   - **Requires restart:** Yes
 
 - **`ui.hideTips`** (boolean):
-  - **Description:** Hide helpful tips in the UI
+  - **Description:** Hide the introductory tips shown at the top of the screen.
+  - **Default:** `false`
+
+- **`ui.hideIntroTips`** (boolean):
+  - **Description:** @deprecated Use ui.hideTips instead. Hide the intro tips in
+    the header.
   - **Default:** `false`
 
 - **`ui.escapePastedAtSymbols`** (boolean):
@@ -253,7 +258,8 @@ their corresponding top-level category object in your `settings.json` file.
   - **Default:** `false`
 
 - **`ui.showShortcutsHint`** (boolean):
-  - **Description:** Show the "? for shortcuts" hint above the input.
+  - **Description:** Show basic shortcut help ('?') when the status line is
+    idle.
   - **Default:** `true`
 
 - **`ui.hideBanner`** (boolean):
@@ -336,9 +342,26 @@ their corresponding top-level category object in your `settings.json` file.
   - **Description:** Show the spinner during operations.
   - **Default:** `true`
 
+- **`ui.hideStatusTips`** (boolean):
+  - **Description:** Hide helpful tips in the footer while the model is working.
+  - **Default:** `false`
+
+- **`ui.hideStatusWit`** (boolean):
+  - **Description:** Hide witty loading phrases in the footer while the model is
+    working.
+  - **Default:** `true`
+
+- **`ui.statusHints`** (enum):
+  - **Description:** @deprecated Use ui.hideStatusTips and ui.hideStatusWit
+    instead. What to show in the status line: tips, witty comments, both, or off
+    (fallback to shortcuts help).
+  - **Default:** `"tips"`
+  - **Values:** `"tips"`, `"witty"`, `"all"`, `"off"`
+
 - **`ui.loadingPhrases`** (enum):
-  - **Description:** What to show while the model is working: tips, witty
-    comments, both, or nothing.
+  - **Description:** @deprecated Use ui.hideStatusTips and ui.hideStatusWit
+    instead. What to show in the status line: tips, witty comments, both, or off
+    (fallback to shortcuts help).
   - **Default:** `"tips"`
   - **Values:** `"tips"`, `"witty"`, `"all"`, `"off"`
 

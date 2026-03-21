@@ -8,9 +8,11 @@ import {
   renderWithProviders,
   persistentStateMock,
 } from '../../test-utils/render.js';
+import type { LoadedSettings } from '../../config/settings.js';
 import { AppHeader } from './AppHeader.js';
 import { describe, it, expect, vi } from 'vitest';
 import crypto from 'node:crypto';
+import { makeFakeConfig } from '@google/gemini-cli-core';
 
 vi.mock('../utils/terminalSetup.js', () => ({
   getTerminalProgram: () => null,
@@ -239,5 +241,24 @@ describe('<AppHeader />', () => {
 
     expect(session2.lastFrame()).not.toContain('Tips');
     session2.unmount();
+  });
+
+  it('should NOT render Tips when ui.hideTips is true', async () => {
+    const mockConfig = makeFakeConfig();
+    const { lastFrame, waitUntilReady, unmount } = await renderWithProviders(
+      <AppHeader version="1.0.0" />,
+      {
+        config: mockConfig,
+        settings: {
+          merged: {
+            ui: { hideTips: true },
+          },
+        } as unknown as LoadedSettings,
+      },
+    );
+    await waitUntilReady();
+
+    expect(lastFrame()).not.toContain('Tips');
+    unmount();
   });
 });
