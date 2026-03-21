@@ -1,10 +1,28 @@
 #!/bin/bash
 
-# Harvest Gemini API Reliability Data from GitHub Actions
-# Use this script to gather data about frequency of 500s API errors during eval running.
+# Gemini API Reliability Harvester
+# -------------------------------
+# This script gathers data about 500 API errors encountered during evaluation runs
+# (eval.yml) from GitHub Actions. It is used to analyze developer friction caused 
+# by transient API failures.
+#
+# Usage:
+#   ./scripts/harvest_api_reliability.sh [SINCE] [LIMIT]
+#
+# Examples:
+#   ./scripts/harvest_api_reliability.sh           # Last 7 days, limit 300
+#   ./scripts/harvest_api_reliability.sh 14d 500   # Last 14 days, limit 500
+#   ./scripts/harvest_api_reliability.sh 2026-03-01 # Since specific date
+#
+# Prerequisites:
+#   - GitHub CLI (gh) installed and authenticated (`gh auth login`)
+#   - jq installed
+#   - unzip installed
 
+# Arguments & Defaults
+SINCE=${1:-"7d"}
+LIMIT=${2:-300}
 WORKFLOW="eval.yml"
-LIMIT=100
 DEST_DIR="/tmp/gemini-reliability-harvest"
 MERGED_FILE="api-reliability-summary.jsonl"
 
@@ -21,28 +39,41 @@ fi
 mkdir -p "$DEST_DIR"
 rm -f "$MERGED_FILE"
 
-echo "🔍 Fetching last $LIMIT runs for $WORKFLOW (all branches)..."
-RUN_IDS=$(gh run list --workflow "$WORKFLOW" --limit "$LIMIT" --json databaseId --jq '.[].databaseId')
+echo "🔍 Fetching runs for $WORKFLOW created since $SINCE (max $LIMIT runs)..."
+
+# gh run list --created supports ">7d" or date ranges
+CREATED_QUERY=">$SINCE"
+if [[ $SINCE =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    CREATED_QUERY=">=$SINCE"
+fi
+
+RUN_IDS=$(gh run list --workflow "$WORKFLOW" --created "$CREATED_QUERY" --limit "$LIMIT" --json databaseId --jq '.[].databaseId')
+
+if [ -z "$RUN_IDS" ]; then
+    echo "📭 No runs found for workflow $WORKFLOW since $SINCE."
+    exit 0
+fi
 
 for ID in $RUN_IDS; do
     echo "📥 Downloading logs from run $ID..."
-    gh run download "$ID" -p "eval-logs-*" -D "$DEST_DIR/$ID" --skip-extract
+    # Download artifacts named 'eval-logs-*'
+    gh run download "$ID" -p "eval-logs-*" -D "$DEST_DIR/$ID" --skip-extract 2>/dev/null || continue
     
     # Extract only the reliability file to save space
-    find "$DEST_DIR/$ID" -name "*.zip" -exec unzip -q -o {} "api-reliability.jsonl" -d "$DEST_DIR/$ID" \;
+    find "$DEST_DIR/$ID" -name "*.zip" -exec unzip -q -o {} "api-reliability.jsonl" -d "$DEST_DIR/$ID" \; 2>/dev/null
     
     # Append to master log
     find "$DEST_DIR/$ID" -name "api-reliability.jsonl" -exec cat {} + >> "$MERGED_FILE"
 done
 
 if [ ! -f "$MERGED_FILE" ]; then
-    echo "📭 No reliability data found in the last $LIMIT runs."
+    echo "📭 No reliability data found in the retrieved logs."
     exit 0
 fi
 
 echo -e "\n✅ Harvest Complete! Data merged into: $MERGED_FILE"
 echo "------------------------------------------------"
-echo "📊 Gemini API Reliability Summary (Last $LIMIT runs)"
+echo "📊 Gemini API Reliability Summary (Since $SINCE)"
 echo "------------------------------------------------"
 
 cat "$MERGED_FILE" | jq -s '
