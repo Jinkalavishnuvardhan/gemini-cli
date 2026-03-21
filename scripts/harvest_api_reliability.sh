@@ -3,8 +3,8 @@
 # Harvest Gemini API Reliability Data from GitHub Actions
 # Use this script to gather data about frequency of 500s API errors during eval running.
 
-WORKFLOW="evals-nightly.yml"
-LIMIT=30
+WORKFLOW="eval.yml"
+LIMIT=100
 DEST_DIR="/tmp/gemini-reliability-harvest"
 MERGED_FILE="api-reliability-summary.jsonl"
 
