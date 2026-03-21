@@ -7,17 +7,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { evalTest } from './test-helper.js';
+import { internalEvalTest } from './test-helper.js';
 import { TestRig } from '@google/gemini-cli-test-utils';
-
-// Mock Vitest's 'it' to capture the function passed to it
-vi.mock('vitest', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('vitest')>();
-  return {
-    ...actual,
-    it: vi.fn(),
-  };
-});
 
 // Mock TestRig to control API success/failure
 vi.mock('@google/gemini-cli-test-utils', () => {
@@ -56,18 +47,12 @@ describe('evalTest reliability logic', () => {
     // Simulate permanent 500 error
     mockRig.run.mockRejectedValue(new Error('status: INTERNAL - API Down'));
 
-    // Trigger evalTest
-    evalTest('ALWAYS_PASSES', {
+    // Execute the test function directly
+    await internalEvalTest({
       name: 'test-api-failure',
       prompt: 'do something',
       assert: async () => {},
     });
-
-    // Extract the internal function passed to vitest's 'it'
-    const testFn = (it as any).mock.calls[0][1];
-
-    // Execute the test function
-    await testFn();
 
     // Verify retries: 1 initial + 3 retries = 4 setups/runs
     expect(mockRig.run).toHaveBeenCalledTimes(4);
@@ -95,18 +80,16 @@ describe('evalTest reliability logic', () => {
     mockRig.run.mockResolvedValue('Success');
     const assertError = new Error('Assertion failed: expected foo to be bar');
 
-    evalTest('ALWAYS_PASSES', {
-      name: 'test-logic-failure',
-      prompt: 'do something',
-      assert: async () => {
-        throw assertError;
-      },
-    });
-
-    const testFn = (it as any).mock.calls[0][1];
-
     // Expect the test function to throw immediately
-    await expect(testFn()).rejects.toThrow('Assertion failed');
+    await expect(
+      internalEvalTest({
+        name: 'test-logic-failure',
+        prompt: 'do something',
+        assert: async () => {
+          throw assertError;
+        },
+      }),
+    ).rejects.toThrow('Assertion failed');
 
     // Verify NO retries: only 1 attempt
     expect(mockRig.run).toHaveBeenCalledTimes(1);
@@ -124,14 +107,11 @@ describe('evalTest reliability logic', () => {
       .mockRejectedValueOnce(new Error('status: INTERNAL'))
       .mockResolvedValueOnce('Success');
 
-    evalTest('ALWAYS_PASSES', {
+    await internalEvalTest({
       name: 'test-recovery',
       prompt: 'do something',
       assert: async () => {},
     });
-
-    const testFn = (it as any).mock.calls[0][1];
-    await testFn();
 
     // Ran twice: initial (fail) + retry 1 (success)
     expect(mockRig.run).toHaveBeenCalledTimes(2);

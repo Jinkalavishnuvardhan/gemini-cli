@@ -36,115 +36,120 @@ export * from '@google/gemini-cli-test-utils';
 export type EvalPolicy = 'ALWAYS_PASSES' | 'USUALLY_PASSES';
 
 export function evalTest(policy: EvalPolicy, evalCase: EvalCase) {
-  const fn = async () => {
-    const maxRetries = 3;
-    let attempt = 0;
+  runEval(
+    policy,
+    evalCase.name,
+    () => internalEvalTest(evalCase),
+    evalCase.timeout,
+  );
+}
 
-    while (attempt <= maxRetries) {
-      const rig = new TestRig();
-      const { logDir, sanitizedName } = await prepareLogDir(evalCase.name);
-      const activityLogFile = path.join(logDir, `${sanitizedName}.jsonl`);
-      const logFile = path.join(logDir, `${sanitizedName}.log`);
-      let isSuccess = false;
+export async function internalEvalTest(evalCase: EvalCase) {
+  const maxRetries = 3;
+  let attempt = 0;
 
-      try {
-        rig.setup(evalCase.name, evalCase.params);
+  while (attempt <= maxRetries) {
+    const rig = new TestRig();
+    const { logDir, sanitizedName } = await prepareLogDir(evalCase.name);
+    const activityLogFile = path.join(logDir, `${sanitizedName}.jsonl`);
+    const logFile = path.join(logDir, `${sanitizedName}.log`);
+    let isSuccess = false;
 
-        // Symlink node modules to reduce the amount of time needed to
-        // bootstrap test projects.
-        symlinkNodeModules(rig.testDir || '');
+    try {
+      rig.setup(evalCase.name, evalCase.params);
 
-        if (evalCase.files) {
-          await setupTestFiles(rig, evalCase.files);
-        }
+      // Symlink node modules to reduce the amount of time needed to
+      // bootstrap test projects.
+      symlinkNodeModules(rig.testDir || '');
 
-        const result = await rig.run({
-          args: evalCase.prompt,
-          approvalMode: evalCase.approvalMode ?? 'yolo',
-          timeout: evalCase.timeout,
-          env: {
-            GEMINI_CLI_ACTIVITY_LOG_TARGET: activityLogFile,
-          },
-        });
-
-        const unauthorizedErrorPrefix =
-          createUnauthorizedToolError('').split("'")[0];
-        if (result.includes(unauthorizedErrorPrefix)) {
-          throw new Error(
-            'Test failed due to unauthorized tool call in output: ' + result,
-          );
-        }
-
-        await evalCase.assert(rig, result);
-        isSuccess = true;
-        return; // Success! Exit the retry loop.
-      } catch (error: any) {
-        const isInternalError =
-          error.message?.includes('status: INTERNAL') ||
-          error.message?.includes('code: 500') ||
-          error.message?.includes('Internal error encountered');
-
-        if (isInternalError) {
-          const status = attempt < maxRetries ? 'RETRY' : 'SKIP';
-          const reliabilityLog = {
-            timestamp: new Date().toISOString(),
-            testName: evalCase.name,
-            model: process.env.GEMINI_MODEL || 'unknown',
-            attempt,
-            status,
-            error: error.message,
-          };
-
-          try {
-            const relDir = path.resolve(process.cwd(), 'evals/logs');
-            fs.mkdirSync(relDir, { recursive: true });
-            fs.appendFileSync(
-              path.join(relDir, 'api-reliability.jsonl'),
-              JSON.stringify(reliabilityLog) + '\n',
-            );
-          } catch (logError) {
-            console.error('Failed to write reliability log:', logError);
-          }
-
-          if (attempt < maxRetries) {
-            attempt++;
-            console.warn(
-              `[Eval] Attempt ${attempt} failed with 500 Internal Error. Retrying...`,
-            );
-            await rig.cleanup();
-            continue; // Retry
-          }
-
-          console.warn(
-            `[Eval] '${evalCase.name}' failed after ${maxRetries} retries due to persistent 500 API errors. Skipping failure to avoid blocking PR.`,
-          );
-          return; // Gracefully exit without failing the test
-        }
-
-        // It's a real failure (assertion, bug, etc.) - fail immediately
-        throw error;
-      } finally {
-        if (isSuccess) {
-          await fs.promises.unlink(activityLogFile).catch((err) => {
-            if (err.code !== 'ENOENT') throw err;
-          });
-        }
-
-        if (rig._lastRunStderr) {
-          const stderrFile = path.join(logDir, `${sanitizedName}.stderr.log`);
-          await fs.promises.writeFile(stderrFile, rig._lastRunStderr);
-        }
-
-        await fs.promises.writeFile(
-          logFile,
-          JSON.stringify(rig.readToolLogs(), null, 2),
-        );
-        await rig.cleanup();
+      if (evalCase.files) {
+        await setupTestFiles(rig, evalCase.files);
       }
-    }
-  };
 
-  runEval(policy, evalCase.name, fn, evalCase.timeout);
+      const result = await rig.run({
+        args: evalCase.prompt,
+        approvalMode: evalCase.approvalMode ?? 'yolo',
+        timeout: evalCase.timeout,
+        env: {
+          GEMINI_CLI_ACTIVITY_LOG_TARGET: activityLogFile,
+        },
+      });
+
+      const unauthorizedErrorPrefix =
+        createUnauthorizedToolError('').split("'")[0];
+      if (result.includes(unauthorizedErrorPrefix)) {
+        throw new Error(
+          'Test failed due to unauthorized tool call in output: ' + result,
+        );
+      }
+
+      await evalCase.assert(rig, result);
+      isSuccess = true;
+      return; // Success! Exit the retry loop.
+    } catch (error: any) {
+      const isInternalError =
+        error.message?.includes('status: INTERNAL') ||
+        error.message?.includes('code: 500') ||
+        error.message?.includes('Internal error encountered');
+
+      if (isInternalError) {
+        const status = attempt < maxRetries ? 'RETRY' : 'SKIP';
+        const reliabilityLog = {
+          timestamp: new Date().toISOString(),
+          testName: evalCase.name,
+          model: process.env.GEMINI_MODEL || 'unknown',
+          attempt,
+          status,
+          error: error.message,
+        };
+
+        try {
+          const relDir = path.resolve(process.cwd(), 'evals/logs');
+          fs.mkdirSync(relDir, { recursive: true });
+          fs.appendFileSync(
+            path.join(relDir, 'api-reliability.jsonl'),
+            JSON.stringify(reliabilityLog) + '\n',
+          );
+        } catch (logError) {
+          console.error('Failed to write reliability log:', logError);
+        }
+
+        if (attempt < maxRetries) {
+          attempt++;
+          console.warn(
+            `[Eval] Attempt ${attempt} failed with 500 Internal Error. Retrying...`,
+          );
+          await rig.cleanup();
+          continue; // Retry
+        }
+
+        console.warn(
+          `[Eval] '${evalCase.name}' failed after ${maxRetries} retries due to persistent 500 API errors. Skipping failure to avoid blocking PR.`,
+        );
+        return; // Gracefully exit without failing the test
+      }
+
+      // It's a real failure (assertion, bug, etc.) - fail immediately
+      throw error;
+    } finally {
+      if (isSuccess) {
+        await fs.promises.unlink(activityLogFile).catch((err) => {
+          if (err.code !== 'ENOENT') throw err;
+        });
+      }
+
+      if (rig._lastRunStderr) {
+        const stderrFile = path.join(logDir, `${sanitizedName}.stderr.log`);
+        await fs.promises.writeFile(stderrFile, rig._lastRunStderr);
+      }
+
+      await fs.promises.writeFile(
+        logFile,
+        JSON.stringify(rig.readToolLogs(), null, 2),
+      );
+      await rig.cleanup();
+    }
+  }
 }
 
 /**
