@@ -562,15 +562,17 @@ export class TestRig {
     // Clear all GEMINI_ environment variables that might interfere with tests
     // except for those we explicitly want to keep or set.
     for (const key of Object.keys(cleanEnv)) {
+      const upperKey = key.toUpperCase();
       if (
-        (key.startsWith('GEMINI_') || key.startsWith('GOOGLE_GEMINI_')) &&
-        key !== 'GEMINI_API_KEY' &&
-        key !== 'GOOGLE_API_KEY' &&
-        key !== 'GEMINI_MODEL' &&
-        key !== 'GEMINI_DEBUG' &&
-        key !== 'GEMINI_CLI_TEST_VAR' &&
-        key !== 'GEMINI_CLI_INTEGRATION_TEST' &&
-        !key.startsWith('GEMINI_CLI_ACTIVITY_LOG')
+        (upperKey.startsWith('GEMINI_') ||
+          upperKey.startsWith('GOOGLE_GEMINI_')) &&
+        upperKey !== 'GEMINI_API_KEY' &&
+        upperKey !== 'GOOGLE_API_KEY' &&
+        upperKey !== 'GEMINI_MODEL' &&
+        upperKey !== 'GEMINI_DEBUG' &&
+        upperKey !== 'GEMINI_CLI_TEST_VAR' &&
+        upperKey !== 'GEMINI_CLI_INTEGRATION_TEST' &&
+        !upperKey.startsWith('GEMINI_CLI_ACTIVITY_LOG')
       ) {
         delete cleanEnv[key];
       }
@@ -1400,8 +1402,11 @@ export class TestRig {
         'TEMP',
         'TMP',
       ];
+      const envVarsUpper = new Set(
+        Object.keys(envVars).map((k) => k.toUpperCase()),
+      );
       for (const v of windowsCriticalVars) {
-        if (process.env[v] && !envVars[v]) {
+        if (process.env[v] && !envVarsUpper.has(v.toUpperCase())) {
           envVars[v] = process.env[v]!;
         }
       }
