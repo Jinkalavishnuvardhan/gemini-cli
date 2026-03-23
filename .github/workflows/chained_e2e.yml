@@ -336,13 +336,21 @@ jobs:
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
         run: 'npm run test:always_passing_evals'
 
+      - name: 'Debug Eval Logs'
+        if: always()
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "Checking for logs in evals/logs:"
+          ls -R evals/logs || echo "No evals/logs directory found."
+
       - name: 'Upload Eval Logs'
-        if: 'always()'
+        if: always()
         uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' # ratchet:actions/upload-artifact@v4
         with:
           name: 'eval-logs-${{ github.run_id }}-${{ github.run_attempt }}'
           path: 'evals/logs'
-          retention-days: 30
+          if-no-files-found: warn
+          retention-days: 14
 
   e2e:
     name: 'E2E'
