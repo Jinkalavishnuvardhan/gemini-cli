@@ -7,7 +7,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createSandboxManager } from './sandboxManagerFactory.js';
 import { ShellExecutionService } from './shellExecutionService.js';
 import { getSecureSanitizationConfig } from './environmentSanitization.js';
-import { type SandboxedCommand } from './sandboxManager.js';
+import {
+  type SandboxedCommand,
+  NoopSandboxManager,
+  LocalSandboxManager,
+} from './sandboxManager.js';
 import { execFile, execSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -123,8 +127,8 @@ describe('SandboxManager Integration', () => {
 
   // Skip if we are on an unsupported platform or if it's a NoopSandboxManager
   const shouldSkip =
-    manager.constructor.name === 'NoopSandboxManager' ||
-    manager.constructor.name === 'LocalSandboxManager' ||
+    manager instanceof NoopSandboxManager ||
+    manager instanceof LocalSandboxManager ||
     !isSandboxAvailable();
 
   describe.skipIf(shouldSkip)('Cross-platform Sandbox Behavior', () => {
