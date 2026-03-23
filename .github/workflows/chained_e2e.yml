@@ -265,7 +265,7 @@ jobs:
           echo "------------------"
 
           # Now exit with the original test exit code
-          exit ${EXIT_CODE:-0}
+          exit "${EXIT_CODE:-0}"
 
       - name: 'Upload Eval Logs'
         if: 'always()'
