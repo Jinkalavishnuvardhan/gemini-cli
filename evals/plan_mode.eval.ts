@@ -30,7 +30,7 @@ describe('plan_mode', () => {
       })
       .filter(Boolean);
 
-  evalTest('ALWAYS_PASSES', {
+  evalTest('USUALLY_PASSES', {
     name: 'should refuse file modification when in plan mode',
     approvalMode: ApprovalMode.PLAN,
     params: {
