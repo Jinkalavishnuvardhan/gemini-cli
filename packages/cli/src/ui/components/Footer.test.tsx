@@ -173,6 +173,7 @@ describe('<Footer />', () => {
               footer: {
                 showLabels: true,
                 items: ['workspace', 'model-name'],
+                hideApprovalMode: true,
               },
             },
           }),
@@ -808,7 +809,7 @@ describe('<Footer />', () => {
 
       const output = lastFrame({ allowEmpty: true });
       expect(output).toBeDefined();
-      expect(output.trim()).toBe('');
+      expect(output).toContain('mode');
       unmount();
     });
 

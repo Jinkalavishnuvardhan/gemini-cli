@@ -626,6 +626,16 @@ const SETTINGS_SCHEMA = {
             description: 'Hide the sandbox status indicator in the footer.',
             showInDialog: true,
           },
+          hideApprovalMode: {
+            type: 'boolean',
+            label: 'Hide Approval Mode',
+            category: 'UI',
+            requiresRestart: false,
+            default: false,
+            description:
+              'Hide the approval mode (manual, auto, plan, YOLO) in the footer.',
+            showInDialog: true,
+          },
           hideModelInfo: {
             type: 'boolean',
             label: 'Hide Model Info',

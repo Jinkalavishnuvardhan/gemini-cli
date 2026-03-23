@@ -5,16 +5,11 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { Box, Text, useIsScreenReaderEnabled } from 'ink';
-import {
-  ApprovalMode,
-  checkExhaustive,
-  CoreToolCallStatus,
-} from '@google/gemini-cli-core';
+import { Box, useIsScreenReaderEnabled } from 'ink';
+import { CoreToolCallStatus } from '@google/gemini-cli-core';
 import { LoadingIndicator } from './LoadingIndicator.js';
 import { StatusDisplay } from './StatusDisplay.js';
 import { ToastDisplay, shouldShowToast } from './ToastDisplay.js';
-import { ApprovalModeIndicator } from './ApprovalModeIndicator.js';
 import { ShellModeIndicator } from './ShellModeIndicator.js';
 import { DetailedMessagesDisplay } from './DetailedMessagesDisplay.js';
 import { RawMarkdownIndicator } from './RawMarkdownIndicator.js';
@@ -39,7 +34,6 @@ import { ConfigInitDisplay } from '../components/ConfigInitDisplay.js';
 import { TodoTray } from './messages/Todo.js';
 import { getInlineThinkingMode } from '../utils/inlineThinkingMode.js';
 import { isContextUsageHigh } from '../utils/contextUsage.js';
-import { theme } from '../semantic-colors.js';
 
 export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
   const config = useConfig();
@@ -112,34 +106,8 @@ export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
     !hasPendingActionRequired;
   const hideUiDetailsForSuggestions =
     suggestionsVisible && suggestionsPosition === 'above';
-  const showApprovalIndicator =
-    !uiState.shellModeActive && !hideUiDetailsForSuggestions;
   const showRawMarkdownIndicator = !uiState.renderMarkdown;
-  let modeBleedThrough: { text: string; color: string } | null = null;
-  switch (showApprovalModeIndicator) {
-    case ApprovalMode.YOLO:
-      modeBleedThrough = { text: 'YOLO', color: theme.status.error };
-      break;
-    case ApprovalMode.PLAN:
-      modeBleedThrough = { text: 'plan', color: theme.status.success };
-      break;
-    case ApprovalMode.AUTO_EDIT:
-      modeBleedThrough = { text: 'auto edit', color: theme.status.warning };
-      break;
-    case ApprovalMode.DEFAULT:
-      modeBleedThrough = null;
-      break;
-    default:
-      checkExhaustive(showApprovalModeIndicator);
-      modeBleedThrough = null;
-      break;
-  }
 
-  const hideMinimalModeHintWhileBusy =
-    !showUiDetails && (showLoadingIndicator || hasPendingActionRequired);
-  const minimalModeBleedThrough = hideMinimalModeHintWhileBusy
-    ? null
-    : modeBleedThrough;
   const hasMinimalStatusBleedThrough = shouldShowToast(uiState);
 
   const showMinimalContextBleedThrough =
@@ -175,14 +143,10 @@ export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
     settings.merged.ui.showShortcutsHint && !hideShortcutsHintForSuggestions;
   const showShortcutsHint =
     shouldReserveSpaceForShortcutsHint && showShortcutsHintDebounced;
-  const showMinimalModeBleedThrough =
-    !hideUiDetailsForSuggestions && Boolean(minimalModeBleedThrough);
   const showMinimalInlineLoading = !showUiDetails && showLoadingIndicator;
   const showMinimalBleedThroughRow =
     !showUiDetails &&
-    (showMinimalModeBleedThrough ||
-      hasMinimalStatusBleedThrough ||
-      showMinimalContextBleedThrough);
+    (hasMinimalStatusBleedThrough || showMinimalContextBleedThrough);
   const showMinimalMetaRow =
     !showUiDetails &&
     (showMinimalInlineLoading ||
@@ -290,19 +254,8 @@ export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
                   elapsedTime={uiState.elapsedTime}
                 />
               )}
-              {showMinimalModeBleedThrough && minimalModeBleedThrough && (
-                <Text color={minimalModeBleedThrough.color}>
-                  ● {minimalModeBleedThrough.text}
-                </Text>
-              )}
               {hasMinimalStatusBleedThrough && (
-                <Box
-                  marginLeft={
-                    showMinimalInlineLoading || showMinimalModeBleedThrough
-                      ? 1
-                      : 0
-                  }
-                >
+                <Box marginLeft={showMinimalInlineLoading ? 1 : 0}>
                   <ToastDisplay />
                 </Box>
               )}
@@ -361,39 +314,20 @@ export const Composer = ({ isFocused = true }: { isFocused?: boolean }) => {
                   flexDirection={isNarrow ? 'column' : 'row'}
                   alignItems={isNarrow ? 'flex-start' : 'center'}
                 >
-                  {showApprovalIndicator && (
-                    <ApprovalModeIndicator
-                      approvalMode={showApprovalModeIndicator}
-                      allowPlanMode={uiState.allowPlanMode}
-                    />
-                  )}
                   {!showLoadingIndicator && (
                     <>
                       {uiState.shellModeActive && (
-                        <Box
-                          marginLeft={
-                            showApprovalIndicator && !isNarrow ? 1 : 0
-                          }
-                          marginTop={showApprovalIndicator && isNarrow ? 1 : 0}
-                        >
+                        <Box marginTop={isNarrow ? 1 : 0}>
                           <ShellModeIndicator />
                         </Box>
                       )}
                       {showRawMarkdownIndicator && (
                         <Box
                           marginLeft={
-                            (showApprovalIndicator ||
-                              uiState.shellModeActive) &&
-                            !isNarrow
-                              ? 1
-                              : 0
+                            uiState.shellModeActive && !isNarrow ? 1 : 0
                           }
                           marginTop={
-                            (showApprovalIndicator ||
-                              uiState.shellModeActive) &&
-                            !isNarrow
-                              ? 1
-                              : 0
+                            uiState.shellModeActive && isNarrow ? 1 : 0
                           }
                         >
                           <RawMarkdownIndicator />
