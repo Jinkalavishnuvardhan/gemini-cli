@@ -68,6 +68,14 @@ export async function internalEvalTest(evalCase: EvalCase) {
         await setupTestFiles(rig, evalCase.files);
       }
 
+      // --- CHAOS SIMULATION ---
+      if (evalCase.name.includes('Chaos')) {
+        throw new Error(
+          'status: INTERNAL - Simulated 500 error for testing pipeline',
+        );
+      }
+      // ------------------------
+
       const result = await rig.run({
         args: evalCase.prompt,
         approvalMode: evalCase.approvalMode ?? 'yolo',
