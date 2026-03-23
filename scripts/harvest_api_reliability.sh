@@ -20,8 +20,23 @@
 #   - unzip installed
 
 # Arguments & Defaults
-SINCE=${1:-"7 days"}
+SINCE_ARG=${1:-"7d"}
 LIMIT=${2:-300}
+
+# Calculate actual date string for gh compatibility
+if [[ "$SINCE_ARG" =~ ^[0-9]+d$ ]]; then
+    DAYS=${SINCE_ARG%d}
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        SINCE=$(date -v-"$DAYS"d +%F)
+    else
+        SINCE=$(date --date="$DAYS days ago" +%F)
+    fi
+elif [[ "$SINCE_ARG" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    SINCE=$SINCE_ARG
+else
+    SINCE=$SINCE_ARG
+fi
+
 WORKFLOWS=("Testing: E2E (Chained)" "Evals: Nightly")
 DEST_DIR="/tmp/gemini-reliability-harvest"
 MERGED_FILE="api-reliability-summary.jsonl"
@@ -39,11 +54,8 @@ fi
 mkdir -p "$DEST_DIR"
 rm -f "$MERGED_FILE"
 
-# gh run list --created supports ">7d" or date ranges
+# gh run list --created supports ">YYYY-MM-DD"
 CREATED_QUERY=">$SINCE"
-if [[ $SINCE =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    CREATED_QUERY=">=$SINCE"
-fi
 
 for WORKFLOW in "${WORKFLOWS[@]}"; do
     echo "🔍 Fetching runs for '$WORKFLOW' created since $SINCE (max $LIMIT runs)..."
