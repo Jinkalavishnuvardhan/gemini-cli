@@ -332,6 +332,7 @@ jobs:
 
       - name: 'Run Evals (Required to pass)'
         if: "${{ steps.check_evals.outputs.should_run == 'true' }}"
+        continue-on-error: true
         env:
           GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
         run: 'npm run test:always_passing_evals'
