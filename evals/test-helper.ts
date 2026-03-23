@@ -56,7 +56,9 @@ export async function internalEvalTest(evalCase: EvalCase) {
     let isSuccess = false;
 
     try {
-      rig.setup(evalCase.name, evalCase.params);
+      const uniqueTestName =
+        attempt > 0 ? `${evalCase.name}-retry-${attempt}` : evalCase.name;
+      rig.setup(uniqueTestName, evalCase.params);
 
       // Symlink node modules to reduce the amount of time needed to
       // bootstrap test projects.
@@ -119,8 +121,7 @@ export async function internalEvalTest(evalCase: EvalCase) {
           console.warn(
             `[Eval] Attempt ${attempt} failed with 500 Internal Error. Retrying...`,
           );
-          await rig.cleanup();
-          continue; // Retry
+          continue; // Retry - finally block will handle rig.cleanup()
         }
 
         console.warn(
