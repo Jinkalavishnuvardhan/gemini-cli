@@ -131,7 +131,30 @@ describe('LinuxSandboxManager', () => {
     const binds = bwrapArgs.slice(bwrapArgs.indexOf('--bind'), bindsIndex);
 
     expect(binds).toEqual(
-      expect.arrayContaining(['--tmpfs', '/test/forbidden_dir']),
+      expect.arrayContaining([
+        '--tmpfs',
+        '/test/forbidden_dir',
+        '--remount-ro',
+        '/test/forbidden_dir',
+      ]),
+    );
+  });
+
+  it('includes --share-net when networkAccess is true', async () => {
+    const bwrapArgs = await getBwrapArgs({
+      command: 'curl',
+      args: ['http://example.com'],
+      cwd: workspace,
+      env: {},
+      policy: {
+        networkAccess: true,
+      },
+    });
+
+    expect(bwrapArgs).toContain('--share-net');
+    // Ensure it comes after --unshare-all
+    expect(bwrapArgs.indexOf('--share-net')).toBeGreaterThan(
+      bwrapArgs.indexOf('--unshare-all'),
     );
   });
 

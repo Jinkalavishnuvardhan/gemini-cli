@@ -6,7 +6,7 @@
 
 import { join, normalize } from 'node:path';
 import fs from 'node:fs/promises';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import {
   type SandboxManager,
@@ -76,6 +76,16 @@ function getSeccompBpfPath(): string {
   const bpfPath = join(os.tmpdir(), `gemini-cli-seccomp-${process.pid}.bpf`);
   writeFileSync(bpfPath, buf);
   cachedBpfPath = bpfPath;
+
+  // Ensure the temporary file is cleaned up on exit
+  process.on('exit', () => {
+    try {
+      unlinkSync(bpfPath);
+    } catch {
+      // Ignore errors during cleanup
+    }
+  });
+
   return bpfPath;
 }
 
@@ -92,8 +102,13 @@ export class LinuxSandboxManager implements SandboxManager {
 
     const sanitizedEnv = sanitizeEnvironment(req.env, sanitizationConfig);
 
-    const bwrapArgs: string[] = [
-      '--unshare-all',
+    const bwrapArgs: string[] = ['--unshare-all'];
+
+    if (req.policy?.networkAccess) {
+      bwrapArgs.push('--share-net');
+    }
+
+    bwrapArgs.push(
       '--new-session', // Isolate session
       '--die-with-parent', // Prevent orphaned runaway processes
       '--ro-bind',
@@ -109,7 +124,7 @@ export class LinuxSandboxManager implements SandboxManager {
       '--bind',
       this.options.workspace,
       this.options.workspace,
-    ];
+    );
 
     const allowedPaths = sanitizePaths(req.policy?.allowedPaths) || [];
     const normalizedWorkspace = normalize(this.options.workspace).replace(
@@ -128,7 +143,12 @@ export class LinuxSandboxManager implements SandboxManager {
       try {
         const stats = await fs.stat(forbiddenPath);
         if (stats.isDirectory()) {
-          bwrapArgs.push('--tmpfs', forbiddenPath);
+          bwrapArgs.push(
+            '--tmpfs',
+            forbiddenPath,
+            '--remount-ro',
+            forbiddenPath,
+          );
         } else {
           bwrapArgs.push('--ro-bind-try', '/dev/null', forbiddenPath);
         }
@@ -161,6 +181,7 @@ export class LinuxSandboxManager implements SandboxManager {
       program: 'sh',
       args: shArgs,
       env: sanitizedEnv,
+      cwd: req.cwd,
     };
   }
 }
