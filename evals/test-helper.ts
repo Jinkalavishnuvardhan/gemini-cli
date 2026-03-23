@@ -203,7 +203,7 @@ async function setupTestFiles(rig: TestRig, files: Record<string, string>) {
   }
 
   const execOptions = { cwd: rig.testDir!, stdio: 'inherit' as const };
-  execSync('git init --initial-branch=main --quiet', execOptions);
+  execSync('git init --initial-branch=main', execOptions);
   execSync('git config user.email "test@example.com"', execOptions);
   execSync('git config user.name "Test User"', execOptions);
 
@@ -214,7 +214,7 @@ async function setupTestFiles(rig: TestRig, files: Record<string, string>) {
   execSync('git config core.editor "true"', execOptions);
   execSync('git config core.pager "cat"', execOptions);
   execSync('git config commit.gpgsign false', execOptions);
-  execSync('git add . --quiet', execOptions);
+  execSync('git add .', execOptions);
   execSync('git commit --quiet --allow-empty -m "Initial commit"', execOptions);
 }
 
