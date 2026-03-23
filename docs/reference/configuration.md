@@ -281,6 +281,11 @@ their corresponding top-level category object in your `settings.json` file.
   - **Description:** Hide the sandbox status indicator in the footer.
   - **Default:** `false`
 
+- **`ui.footer.hideApprovalMode`** (boolean):
+  - **Description:** Hide the approval mode (manual, auto, plan, YOLO) in the
+    footer.
+  - **Default:** `false`
+
 - **`ui.footer.hideModelInfo`** (boolean):
   - **Description:** Hide the model name and context usage in the footer.
   - **Default:** `false`
